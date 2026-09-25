@@ -1,6 +1,6 @@
 {
-  "name": "@epicdesignlabs/env-sync",
-  "version": "1.1.2",
+  "name": "edl-env-sync",
+  "version": "1.2.0",
   "description": "Render .env files from 1Password, matching variables to fields by name.",
   "type": "module",
   "bin": {
@@ -27,8 +27,5 @@
     "env",
     "secrets",
     "cli"
-  ],
-  "publishConfig": {
-    "access": "public"
-  }
+  ]
 }

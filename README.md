@@ -49,7 +49,7 @@ CLERK_SECRET_KEY=
 ## Install
 
 ```
-pnpm add -D @epicdesignlabs/env-sync      # or: npm install -D @epicdesignlabs/env-sync
+npm install -D edl-env-sync      # or: pnpm add -D edl-env-sync
 ```
 
 Then add the scripts to `package.json`:
