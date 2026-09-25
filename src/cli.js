@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { runAdd } from './add.js';
-import { attempt, runDoctor, steps } from './checks.js';
+import { allTemplatesMissing, attempt, notSetUp, runDoctor, steps } from './checks.js';
 import { CONFIG_FILE, readConfig } from './config.js';
 import { CliError, EXIT, formatProblem } from './errors.js';
 import { addIgnoreRule, requireIgnored, scratchDir } from './fsutil.js';
@@ -98,7 +98,10 @@ export async function main(argv) {
     attempt(() => steps.ignored(root), log);
     const scratch = scratchDir(root);
     const op = new Op({ account: cfg.account, vault: cfg.vault, scratch });
-    attempt(() => op.preflight(), log);
+    try { attempt(() => op.preflight(), log); } catch (e) {
+      if (e instanceof CliError && e.code === EXIT.NO_VAULT && allTemplatesMissing(cfg)) throw notSetUp(cfg, e.said);
+      throw e;
+    }
 
     if (name === 'add') return runAdd({ cfg, op, key: opts._[0], to: opts.to, app: !!opts.app, log });
     attempt(() => steps.templates(cfg), log);

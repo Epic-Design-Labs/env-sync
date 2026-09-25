@@ -54,6 +54,23 @@ export const steps = {
   },
 };
 
+/**
+ * 1Password gives the same answer for "no such vault" and "not shared with you",
+ * so on its own that can't tell the two apart. With every template missing as
+ * well, though, the project simply hasn't been set up yet: say that, once.
+ */
+export function notSetUp(cfg, said) {
+  return new CliError(EXIT.NO_VAULT, 'This project is not set up in 1Password yet', { said, fix: [
+    `If you are setting it up: ${cmd('setup', ['--rehearse'])}   (a safe trial run), then ${cmd('setup')}`,
+    `If a teammate already did: git pull, and ask them to share the vault "${cfg.vault}" with you.`,
+  ] });
+}
+
+export function allTemplatesMissing(cfg) {
+  const envs = cfg.rows.filter((r) => r.kind === 'env');
+  return envs.length > 0 && envs.every((r) => !fs.existsSync(r.templateAbs));
+}
+
 /** `env-sync doctor`: every check, top to bottom, with a fix for each problem. */
 export function runDoctor({ log }) {
   const results = [];
@@ -73,7 +90,8 @@ export function runDoctor({ log }) {
     if (c.ok) {
       cfg = c.value;
       const envs = cfg.rows.filter((x) => x.kind === 'env').length;
-      pass(`${CONFIG_FILE}: ${envs} env files, ${cfg.rows.length - envs} documents, vault "${cfg.vault}"${cfg.account ? `, account "${cfg.account}"` : ''}`);
+      const n = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
+      pass(`${CONFIG_FILE}: ${n(envs, 'env file')}, ${n(cfg.rows.length - envs, 'document')}, vault "${cfg.vault}"${cfg.account ? `, account "${cfg.account}"` : ''}`);
     }
     r = tryStep(() => steps.ignored(repo.value)); if (r.ok) pass('.env-sync.* is in .gitignore');
   } else { skip(CONFIG_FILE, 'inside a git repository'); }
@@ -86,12 +104,17 @@ export function runDoctor({ log }) {
     if (r.ok) { signedIn = true; pass(`Signed in to 1Password${cfg.account ? ` (account "${cfg.account}")` : ''}`); }
   } else { skip('Signed in to 1Password', cfg ? 'the 1Password CLI is installed' : `${CONFIG_FILE} is fixed`); }
 
-  let vaultOk = false;
-  if (signedIn) { r = tryStep(() => op.preflight()); if (r.ok) { vaultOk = true; pass(`Vault "${cfg.vault}" is reachable`); } }
-  else skip(`Vault${cfg ? ` "${cfg.vault}"` : ''}`, 'signed in');
-
-  let templatesOk = false;
-  if (cfg) { r = tryStep(() => steps.templates(cfg)); if (r.ok) { templatesOk = true; pass('Every template is present'); } }
+  const capture = (fn) => { try { attempt(fn, log); return null; } catch (e) { if (!(e instanceof CliError)) throw e; return e; } };
+  const vaultErr = signedIn ? capture(() => op.preflight()) : null;
+  const templatesErr = cfg ? capture(() => steps.templates(cfg)) : null;
+  const vaultOk = signedIn && !vaultErr;
+  const templatesOk = !!cfg && !templatesErr;
+  if (vaultErr?.code === EXIT.NO_VAULT && templatesErr && allTemplatesMissing(cfg)) {
+    fail(notSetUp(cfg, vaultErr.said));
+  } else {
+    if (vaultErr) fail(vaultErr); else if (signedIn) pass(`Vault "${cfg.vault}" is reachable`); else skip(`Vault${cfg ? ` "${cfg.vault}"` : ''}`, 'signed in');
+    if (templatesErr) fail(templatesErr); else if (cfg) pass('Every template is present');
+  }
 
   if (vaultOk && templatesOk && repo.ok) {
     let resolved = null;

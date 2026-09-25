@@ -21,7 +21,7 @@ describe('env-sync doctor', () => {
     const dir = project(); run(dir, ['pull', '--yes']);
     const r = doctor(dir);
     assert.equal(r.status, 0, r.all);
-    for (const t of [/Node \d/, /1Password CLI 2\.39\.0/, /Git repository/, /1 env files, 0 documents, vault "Test Dev", account "epicdesignlabs"/,
+    for (const t of [/Node \d/, /1Password CLI 2\.39\.0/, /Git repository/, /1 env file, 0 documents, vault "Test Dev", account "epicdesignlabs"/,
       /\.env-sync\.\* is in \.gitignore/, /Signed in to 1Password \(account "epicdesignlabs"\)/, /Vault "Test Dev" is reachable/,
       /Every template is present/, /Every variable and document is in 1Password/, /local files are up to date/, /Everything looks good/]) assert.match(r.stdout, t);
     noLeak(r);
@@ -129,5 +129,26 @@ describe('fixes it offers, and only after asking', () => {
     const r = run(dir, ['pull', '--yes'], { env: { ENV_SYNC_INTERACTIVE: '1' }, input: 'y\n' });
     assert.equal(r.status, 0, r.all);
     assert.match(read(dir, '.gitignore'), /^\.env-sync\.\*$/m); assert.ok(exists(dir, 'apps/server/.env'));
+  });
+});
+
+describe('a project that has not been set up yet', () => {
+  const fresh = () => project({ vault: { 'Other Dev': {} }, template: null });
+  it('doctor reports one problem, not two, with both ways forward', () => {
+    const r = run(fresh(), ['doctor']);
+    assert.equal(r.status, 3);
+    assert.match(r.stdout, /This project is not set up in 1Password yet/);
+    assert.match(r.stdout, /pnpm env:setup --rehearse/);
+    assert.match(r.stdout, /git pull, and ask them to share the vault "Test Dev"/);
+    assert.doesNotMatch(r.stdout, /Template missing/);
+    assert.match(r.stdout, /1 to fix/);
+  });
+  it('pull says the same thing', () => {
+    const r = run(fresh(), ['pull']);
+    assert.equal(r.status, 3); assert.match(r.stderr, /not set up in 1Password yet/);
+  });
+  it('a vault that exists but is not shared still gets the ask-for-access fix', () => {
+    const r = run(project({ vault: { 'Other Dev': {} } }), ['doctor']);
+    assert.match(r.stdout, /No access to the vault "Test Dev"/);
   });
 });
