@@ -1,6 +1,6 @@
 {
   "name": "edl-env-sync",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Render .env files from 1Password, matching variables to fields by name.",
   "type": "module",
   "bin": {
@@ -8,7 +8,8 @@
   },
   "files": [
     "bin",
-    "src"
+    "src",
+    "docs"
   ],
   "engines": {
     "node": ">=20"

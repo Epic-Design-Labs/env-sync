@@ -12,6 +12,17 @@ pnpm env:setup    # one-time: move a project's existing values into 1Password
 
 Owned by Epic Design Labs, for every EDL project. Zero dependencies, Node 20+.
 
+## Documentation
+
+The full guides ship with the package, in [`docs/`](docs/README.md), which is also at `node_modules/edl-env-sync/docs/` once installed. `env-sync help <command>` gives the short version in your terminal.
+
+- [Getting started](docs/getting-started.md): joining a project that already uses env-sync
+- [Setting up a project](docs/setting-up-a-project.md): moving a project's secrets into 1Password
+- [Configuration](docs/configuration.md): `env-sync.conf` and `.env.template`
+- [Commands](docs/commands.md): every command, flag and exit code
+- [Troubleshooting](docs/troubleshooting.md): every error message and its fix
+- [Security](docs/security.md): what it guarantees about your secrets, and the limits
+
 ## How it works
 
 Each repo commits two kinds of file.

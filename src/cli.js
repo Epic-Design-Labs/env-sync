@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runAdd } from './add.js';
 import { allTemplatesMissing, attempt, notSetUp, runDoctor, steps } from './checks.js';
 import { CONFIG_FILE, readConfig } from './config.js';
@@ -23,6 +24,71 @@ const USAGE = `env-sync ${pkg.version} — render .env files from 1Password, mat
 
 Exit codes: 0 ok · 1 out of date · 2 op missing or signed out · 3 vault unreachable
             4 not in 1Password · 5 bad config or arguments`;
+
+const DOCS_DIR = fileURLToPath(new URL('../docs/', import.meta.url));
+const DOCS_WEB = 'https://github.com/Epic-Design-Labs/env-sync/tree/main/docs';
+const docsLine = () => `Docs: ${DOCS_DIR} (also ${DOCS_WEB})`;
+
+const HELP = {
+  pull: `env-sync pull [--yes] [--dry-run] [--only <destination>]
+
+Writes your .env files and documents from 1Password. Blank KEY= lines in each
+template are filled from the 1Password field with the same name. It shows the
+change by variable name and asks before writing each file.
+
+  --yes, -y          write without asking
+  --dry-run          show what would change, write nothing
+  --only <dest>      handle one file, e.g. --only apps/server/.env
+
+If any variable is missing from 1Password, it lists them all and writes nothing.`,
+  check: `env-sync check [--only <destination>]
+
+Says whether your files match 1Password. Never writes.
+Exit 0: everything current. Exit 1: something is missing, different, or has
+loose permissions — run env-sync pull.`,
+  doctor: `env-sync doctor
+
+Checks everything env-sync needs, top to bottom — Node, the 1Password CLI,
+the repo, env-sync.conf, .gitignore, sign-in, vault access, templates, every
+variable, and whether your files are current — and prints the exact fix for
+each problem.`,
+  add: `env-sync add KEY [--to <template>] [--app]
+
+Adds a new secret to 1Password and a blank KEY= line to the template, in one
+step. Asks for the value without showing it. Never overwrites: a name that
+already exists is refused (edit it in 1Password instead).
+
+  --to <template>    which template, when the project has several
+  --app              store it in the app's own entry instead of Shared
+
+Afterwards, commit the template; teammates get it on their next pull.`,
+  setup: `env-sync setup [--rehearse] [--vault <name>] [--account <name>] [--source <dir>]
+               [--include KEY@<destination>] [--force]
+
+One-time per project: moves the current .env values into a new vault and
+writes the templates. Always rehearse first.
+
+  --rehearse         trial run in a throwaway vault, deleted afterwards
+  --vault <name>     the vault to create (unless env-sync.conf names one)
+  --account <name>   which 1Password account to use
+  --source <dir>     read the values from another checkout
+  --include KEY@dest upload a key that was excluded as production-looking
+  --force            overwrite templates / add to a vault that has entries
+
+Full guide: setting-up-a-project.md`,
+};
+
+function help(topic, log) {
+  if (!topic) { log.out(`${USAGE}
+
+More on a command: env-sync help <command>
+${docsLine()}`); return EXIT.OK; }
+  if (!HELP[topic]) throw argError(`no help for "${topic}". Commands: ${Object.keys(HELP).join(', ')}`);
+  log.out(`${HELP[topic]}
+
+${docsLine()}`);
+  return EXIT.OK;
+}
 
 const FLAGS = {
   pull: { yes: 'bool', y: 'yes', 'dry-run': 'bool', only: 'str' },
@@ -62,10 +128,11 @@ export async function main(argv) {
   try {
     const first = argv[0];
     if (first === '--version' || first === '-v') { log.out(pkg.version); return EXIT.OK; }
-    if (first === 'help' || first === '--help' || first === '-h') { log.out(USAGE); return EXIT.OK; }
+    if (first === 'help' || first === '--help' || first === '-h') return help(first === 'help' ? argv[1] : null, log);
     const name = first && !first.startsWith('-') ? first : 'pull';
     if (!FLAGS[name]) throw argError(`unknown command "${name}"\n\n${USAGE}`);
     const rest = first === name ? argv.slice(1) : argv;
+    if (rest.includes('--help') || rest.includes('-h')) return help(name, log);
     const opts = parseArgs(name, rest);
     if (name === 'check' && opts.yes) throw argError('check never writes, so it takes no --yes');
 
