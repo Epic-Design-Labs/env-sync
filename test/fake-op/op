@@ -1,0 +1,61 @@
+#!/usr/bin/env node
+// Fake 1Password CLI. State lives in $FAKE_OP_STATE:
+//   { vaults: { [name]: { items: { [title]: { fields: {label: value} } | { doc: base64 } } } } }
+// FAKE_OP_SIGNED_OUT=1 simulates a locked app; FAKE_OP_ACCOUNT pins the only account that works.
+import fs from 'node:fs';
+
+const file = process.env.FAKE_OP_STATE;
+const st = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : { vaults: {} };
+const save = () => fs.writeFileSync(file, JSON.stringify(st));
+const die = (m, c = 1) => { process.stderr.write(`[ERROR] ${m}\n`); process.exit(c); };
+
+let a = process.argv.slice(2);
+const ai = a.indexOf('--account');
+if (ai >= 0) {
+  const acct = a[ai + 1];
+  a = a.filter((_, i) => i !== ai && i !== ai + 1);
+  if (process.env.FAKE_OP_ACCOUNT && acct !== process.env.FAKE_OP_ACCOUNT) die(`no account "${acct}"`);
+}
+const opt = (n) => (a.includes(n) ? a[a.indexOf(n) + 1] : undefined);
+const vault = () => st.vaults[opt('--vault')] ?? die(`no vault ${opt('--vault')}`);
+
+if (a[0] === '--version') { console.log('2.39.0'); process.exit(0); }
+if (process.env.FAKE_OP_SIGNED_OUT === '1') die('You are not currently signed in.');
+const [c1, c2] = a;
+
+if (c1 === 'whoami') { console.log('fake'); process.exit(0); }
+if (c1 === 'vault' && c2 === 'get') process.exit(st.vaults[a[2]] ? 0 : 1);
+if (c1 === 'vault' && c2 === 'create') { st.vaults[a[2]] = { items: {} }; save(); process.exit(0); }
+if (c1 === 'vault' && c2 === 'delete') { delete st.vaults[a[2]]; save(); process.exit(0); }
+if (c1 === 'item' && c2 === 'list') { console.log(JSON.stringify(Object.keys(vault().items).map((title) => ({ title })))); process.exit(0); }
+if (c1 === 'item' && c2 === 'get') {
+  const it = vault().items[a[2]] ?? die(`"${a[2]}" isn't an item`);
+  if (!a.includes('--reveal')) die('refusing to print concealed values without --reveal');
+  if (process.env.FAKE_OP_GARBLE_GET === '1') { process.stdout.write('{"fields":[{"value":"sk_test_SEKRETgarbled"'); process.exit(0); }
+  console.log(JSON.stringify({ title: a[2], fields: [{ label: 'notesPlain', value: '' }, ...Object.entries(it.fields).map(([label, value]) => ({ label, value, type: 'CONCEALED' }))] }));
+  process.exit(0);
+}
+if (c1 === 'item' && c2 === 'create') {
+  const t = JSON.parse(fs.readFileSync(opt('--template'), 'utf8'));
+  if (vault().items[t.title]) die(`"${t.title}" already exists`);
+  const corrupt = process.env.FAKE_OP_CORRUPT_CREATE === '1';   // simulate a vault that stores the wrong value
+  vault().items[t.title] = { fields: Object.fromEntries(t.fields.map((f) => [f.label, corrupt ? `${f.value}x` : f.value])) };
+  save(); console.log(JSON.stringify({ id: 'x', fields: t.fields })); process.exit(0);   // real op echoes the item
+}
+if (c1 === 'item' && c2 === 'edit') {
+  const it = vault().items[a[2]] ?? die(`"${a[2]}" isn't an item`);
+  for (const asg of a.slice(3).filter((x) => /^\w+\[\w+\]=/.test(x))) {
+    const [, label, value] = /^(\w+)\[\w+\]=(.*)$/s.exec(asg);
+    it.fields[label] = value;
+  }
+  save(); process.exit(0);
+}
+if (c1 === 'document' && c2 === 'create') {
+  vault().items[opt('--title')] = { doc: fs.readFileSync(a[2]).toString('base64') }; save(); process.exit(0);
+}
+if (c1 === 'document' && c2 === 'get') {
+  const it = vault().items[a[2]];
+  if (!it?.doc) die(`"${a[2]}" isn't a document`);
+  fs.writeFileSync(opt('--out-file'), Buffer.from(it.doc, 'base64')); process.exit(0);
+}
+die(`fake op: unsupported ${a.join(' ')}`, 64);
