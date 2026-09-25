@@ -6,6 +6,7 @@ Render your project's `.env` files from 1Password. Each variable is matched to t
 pnpm env:pull     # write .env files from 1Password
 pnpm env:check    # exit 1 if your .env files are out of date
 pnpm env:add KEY  # add a new secret to 1Password and the template
+pnpm env:doctor   # check your setup, and show how to fix each problem
 pnpm env:setup    # one-time: move a project's existing values into 1Password
 ```
 
@@ -50,12 +51,13 @@ CLERK_SECRET_KEY=
 ```jsonc
 // package.json
 "devDependencies": {
-  "@epicdesignlabs/env-sync": "github:Epic-Design-Labs/env-sync#v1.0.1"
+  "@epicdesignlabs/env-sync": "github:Epic-Design-Labs/env-sync#v1.1.0"
 },
 "scripts": {
   "env:pull": "env-sync pull",
   "env:check": "env-sync check",
   "env:add": "env-sync add",
+  "env:doctor": "env-sync doctor",
   "env:setup": "env-sync setup"
 }
 ```
@@ -92,6 +94,34 @@ pnpm env:setup --vault "Acme Dev"              # for real
 - **made portable**: absolute paths inside the repo are rewritten relative to the `.env` file, so they work on every machine.
 
 When two apps hold different values under one name, the second app gets its own entry. Before writing a single template, `setup` renders every template back from 1Password and checks each value against your file. Nothing it prints ever contains a secret value. Use `--source <dir>` to read values from a different checkout.
+
+## When something is wrong
+
+Run `pnpm env:doctor`. It checks everything the tool depends on, top to bottom, and for each problem shows what is wrong, what 1Password actually said, and the exact command that fixes it, using your own account and vault names. Checks that depend on a failed one are marked skipped rather than piling up follow-on errors.
+
+```
+  ✓ Node 20.20.2 (needs 20+)
+  ✓ 1Password CLI 2.39.0
+  ✗ Not signed in to 1Password (account "epicdesignlabs")
+      1Password said: You are not currently signed in.
+      Fix: eval $(op signin --account epicdesignlabs)
+           Or use Touch ID instead of a password: 1Password → Settings → Developer →
+           "Integrate with 1Password CLI", and add your epicdesignlabs account to the app.
+  · Vault "Throttle Dev"  (skipped until signed in)
+```
+
+Every other command runs the same checks first and stops at the first problem with the same explanation. In a terminal, a problem with a safe local fix is offered and applied only if you answer yes: **signing in** (it runs the 1Password sign-in for you and keeps the session for that run, so there's no `eval`) and **adding the `.gitignore` rule**. Anything involving other people, such as vault access, is only explained. With no terminal attached, as in CI, nothing prompts.
+
+| You see | What it means | Fix |
+|---|---|---|
+| Not signed in to 1Password | no session for the account in `env-sync.conf` | answer yes when asked, or `eval $(op signin --account <account>)` |
+| The 1Password app did not answer | CLI integration is on, but the app is locked or closed | open and unlock the app |
+| The 1Password CLI does not know the account | the account isn't in the app or the CLI | add it in the app, or `op account add --address <account>.1password.com` |
+| No access to the vault | the vault isn't shared with you, or doesn't exist yet | ask its owner, or create it with `env:setup` |
+| Template missing | the template isn't in your checkout | `git pull` |
+| Not in 1Password | a template names a variable the vault doesn't have | `pnpm env:add KEY --to <template>`, or fix the typo |
+
+Hints use the command you actually ran with: `pnpm env:pull`, `npm run env:pull`, `yarn env:pull`, or `npx env-sync pull`.
 
 ## Guarantees
 

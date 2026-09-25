@@ -5,7 +5,7 @@ import { CliError, EXIT } from './errors.js';
 
 export function repoRoot(cwd = process.cwd()) {
   const r = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' });
-  if (r.status !== 0) throw new CliError(EXIT.USAGE, 'not inside a git repository');
+  if (r.status !== 0) throw new CliError(EXIT.USAGE, 'Not inside a git repository', { fix: ['Run this from inside the project\'s git checkout.'] });
   return fs.realpathSync(r.stdout.trim());
 }
 
@@ -15,10 +15,19 @@ export function repoRoot(cwd = process.cwd()) {
  * .gitignore a containment control: without it a crash could leave plaintext
  * secrets where `git add -A` would pick them up.
  */
+export function addIgnoreRule(root) {
+  const gi = path.join(root, '.gitignore');
+  const cur = fs.existsSync(gi) ? fs.readFileSync(gi, 'utf8') : '';
+  fs.writeFileSync(gi, `${cur}${cur && !cur.endsWith('\n') ? '\n' : ''}\n# env-sync renders secrets into a scratch dir here; never commit it.\n.env-sync.*\n`);
+}
+
 export function requireIgnored(root) {
   const r = spawnSync('git', ['check-ignore', '-q', '.env-sync.probe'], { cwd: root });
   if (r.status !== 0) {
-    throw new CliError(EXIT.USAGE, "add '.env-sync.*' to .gitignore — env-sync renders secrets into the repo root");
+    throw new CliError(EXIT.USAGE, '.gitignore does not cover env-sync\'s scratch directory', {
+      fix: ['Add this line to .gitignore:  .env-sync.*', 'env-sync renders secrets there for a moment; without the rule, `git add -A` could commit them.'],
+      autofix: { prompt: "Add '.env-sync.*' to .gitignore now?", run: () => addIgnoreRule(root) },
+    });
   }
 }
 

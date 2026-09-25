@@ -24,7 +24,11 @@ describe('preflight and exit codes', () => {
   });
   it('exits 2 when signed out', () => {
     const r = run(project(), ['pull'], { env: { FAKE_OP_SIGNED_OUT: '1' } });
-    assert.equal(r.status, 2); assert.match(r.stderr, /not signed in/);
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /Not signed in to 1Password \(account "epicdesignlabs"\)/);
+    assert.match(r.stderr, /1Password said: You are not currently signed in/);
+    assert.match(r.stderr, /Fix: eval \$\(op signin --account epicdesignlabs\)/);
+    assert.match(r.stderr, /pnpm env:doctor/);
   });
   it('exits 2 and names the account when the pinned account is not available', () => {
     const r = run(project(), ['pull'], { env: { FAKE_OP_ACCOUNT: 'someone-else' } });
@@ -40,7 +44,8 @@ describe('preflight and exit codes', () => {
   });
   it('exits 5 without env-sync.conf', () => {
     const dir = makeRepo(); seed(dir, VAULT);
-    const r = run(dir, ['pull']); assert.equal(r.status, 5); assert.match(r.stderr, /env-sync setup/);
+    const r = run(dir, ['pull']); assert.equal(r.status, 5);
+    assert.match(r.stderr, /No env-sync\.conf/); assert.match(r.stderr, /pnpm env:setup --vault/);
   });
   it('exits 5 when .env-sync.* is not gitignored, and writes nothing', () => {
     const dir = makeRepo({ ignoreScratch: false });
@@ -101,7 +106,9 @@ describe('matching by name', () => {
     const dir = project(); write(dir, 'apps/server/.env.template', `${TEMPLATE}CLERK_SECRET_KY=\nALSO_MISSING=\n`);
     const r = run(dir, ['pull', '--yes']);
     assert.equal(r.status, 4);
-    assert.match(r.stderr, /CLERK_SECRET_KY, ALSO_MISSING/);
+    assert.match(r.stderr, /CLERK_SECRET_KY {2}\(apps\/server\/\.env\.template\)/);
+    assert.match(r.stderr, /pnpm env:add CLERK_SECRET_KY --to apps\/server\/\.env\.template/);
+    assert.match(r.stderr, /pnpm env:add ALSO_MISSING --to apps\/server\/\.env\.template/);
     assert.ok(!exists(dir, 'apps/server/.env'));
     noLeak(r);
   });

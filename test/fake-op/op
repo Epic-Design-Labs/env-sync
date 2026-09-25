@@ -20,8 +20,19 @@ const opt = (n) => (a.includes(n) ? a[a.indexOf(n) + 1] : undefined);
 const vault = () => st.vaults[opt('--vault')] ?? die(`no vault ${opt('--vault')}`);
 
 if (a[0] === '--version') { console.log('2.39.0'); process.exit(0); }
-if (process.env.FAKE_OP_SIGNED_OUT === '1') die('You are not currently signed in.');
 const [c1, c2] = a;
+// `op signin`: reads a password line from the terminal (one byte at a time, so it never
+// swallows input meant for later prompts), then prints the session export like the real CLI.
+if (c1 === 'signin') {
+  const b = Buffer.alloc(1); let pw = '';
+  process.stderr.write('Enter the password for fake@example.test: ');
+  while (fs.readSync(0, b, 0, 1, null) === 1 && b[0] !== 10) pw += b.toString();
+  if (pw !== 'hunter2') die('Authentication: (401) Unauthorized');
+  process.stdout.write('export OP_SESSION_fake="tok-SEKRETsession"\n# This command is meant to be used with your shell\'s eval function.\n');
+  process.exit(0);
+}
+if (process.env.FAKE_OP_APP_TIMEOUT === '1') die('connecting to desktop app: connecting to desktop app timed out, make sure it is installed, running and CLI integration is enabled');
+if (process.env.FAKE_OP_SIGNED_OUT === '1' && process.env.OP_SESSION_fake !== 'tok-SEKRETsession') die('You are not currently signed in. Please run `op signin --help` for instructions');
 
 // Like the real CLI with desktop-app integration: whoami only reports an
 // existing session and never asks the app to unlock, so it fails here even

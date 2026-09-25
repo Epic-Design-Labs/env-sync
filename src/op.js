@@ -3,7 +3,8 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { CliError, EXIT } from './errors.js';
+import { CliError, EXIT, opSaid } from './errors.js';
+import { cmd } from './hint.js';
 
 // JSON.parse errors quote the text they fail on. Here that text is op's output,
 // which holds secret values, so the message is replaced with a value-free one.
@@ -16,6 +17,13 @@ function parseJson(text, what) {
 // op's wording for "you are not signed in" (as opposed to "no such vault").
 const SIGNED_OUT = /not currently signed in|no active session|sign ?in|authoriz|desktop app|no account found|not a known account|account "[^"]*" (not found|isn't)/i;
 
+export function notInstalled() {
+  return new CliError(EXIT.NO_OP, 'The 1Password CLI (op) is not installed', { fix: [
+    'brew install 1password-cli',
+    'Other systems: https://developer.1password.com/docs/cli/get-started/',
+  ] });
+}
+
 export class Op {
   constructor({ account = null, vault, scratch }) {
     this.account = account;
@@ -26,9 +34,7 @@ export class Op {
   run(args, { input } = {}) {
     const full = this.account ? [...args, '--account', this.account] : args;
     const r = spawnSync('op', full, { encoding: 'utf8', input, maxBuffer: 64 * 1024 * 1024 });
-    if (r.error && r.error.code === 'ENOENT') {
-      throw new CliError(EXIT.NO_OP, '1Password CLI (op) is not installed. brew install 1password-cli');
-    }
+    if (r.error && r.error.code === 'ENOENT') throw notInstalled();
     return r;
   }
 
@@ -38,9 +44,50 @@ export class Op {
     return r;
   }
 
-  signedOutError() {
-    const who = this.account ? ` to the "${this.account}" account` : '';
-    return new CliError(EXIT.NO_OP, `not signed in to 1Password${who}. Unlock the 1Password app (Settings → Developer → Integrate with 1Password CLI), approve its prompt, or run: op signin`);
+  /** Turns op's refusal into the specific cause and fix, from what op actually said. */
+  signInProblem(stderr) {
+    const said = opSaid(stderr);
+    const a = this.account;
+    const acct = a ? ` --account ${a}` : '';
+    if (/desktop app/i.test(stderr) && /timed out|not running|connect/i.test(stderr)) {
+      return new CliError(EXIT.NO_OP, 'The 1Password app did not answer', { said, fix: [
+        'Open the 1Password app and unlock it.',
+        'Then check Settings → Developer → "Integrate with 1Password CLI" is on.',
+      ] });
+    }
+    if (/no account found|not a known account|account "[^"]*" (not found|isn't)/i.test(stderr)) {
+      const address = a && !a.includes('.') ? `${a}.1password.com` : a;
+      return new CliError(EXIT.NO_OP, `The 1Password CLI does not know the account "${a}"`, { said, fix: [
+        `Add it in the 1Password app (then Touch ID works), or add it to the CLI: op account add --address ${address}`,
+        `If "${a}" is the wrong account, fix the account line in env-sync.conf.`,
+      ] });
+    }
+    if (/dismiss|cancel|denied/i.test(stderr)) {
+      return new CliError(EXIT.NO_OP, 'The 1Password prompt was dismissed', { said, fix: ['Run the command again and approve the 1Password prompt.'] });
+    }
+    return new CliError(EXIT.NO_OP, `Not signed in to 1Password${a ? ` (account "${a}")` : ''}`, {
+      said,
+      fix: [
+        `eval $(op signin${acct})`,
+        'Or use Touch ID instead of a password: 1Password → Settings → Developer →',
+        `"Integrate with 1Password CLI", and add ${a ? `your ${a} account` : 'your account'} to the app.`,
+      ],
+      autofix: { prompt: 'Sign in to 1Password now?', run: () => this.signInInteractive() },
+    });
+  }
+
+  /**
+   * Runs `op signin` with the person's terminal attached, so op can ask for a
+   * password or show the app prompt. The session op prints is kept in this
+   * process's environment (so every later op call uses it) and never printed.
+   */
+  signInInteractive() {
+    const args = ['signin', ...(this.account ? ['--account', this.account] : [])];
+    const r = spawnSync('op', args, { stdio: ['inherit', 'pipe', 'inherit'], encoding: 'utf8' });
+    if (r.status !== 0) {
+      throw new CliError(EXIT.NO_OP, 'Sign-in did not complete', { fix: [`eval $(op signin${this.account ? ` --account ${this.account}` : ''})`, 'then run the command again.'] });
+    }
+    for (const m of (r.stdout || '').matchAll(/export (OP_SESSION_\w+)="([^"]*)"/g)) process.env[m[1]] = m[2];
   }
 
   /**
@@ -50,14 +97,17 @@ export class Op {
    */
   requireSignedIn() {
     const r = this.run(['vault', 'list', '--format', 'json']);
-    if (r.status !== 0) throw this.signedOutError();
+    if (r.status !== 0) throw this.signInProblem(r.stderr);
   }
 
   preflight() {
     const r = this.run(['vault', 'get', this.vault]);
     if (r.status === 0) return;
-    if (SIGNED_OUT.test(r.stderr || '')) throw this.signedOutError();
-    throw new CliError(EXIT.NO_VAULT, `cannot reach the "${this.vault}" vault. Ask whoever manages it for access.`);
+    if (SIGNED_OUT.test(r.stderr || '')) throw this.signInProblem(r.stderr);
+    throw new CliError(EXIT.NO_VAULT, `No access to the vault "${this.vault}"`, { said: opSaid(r.stderr), fix: [
+      `Ask whoever manages "${this.vault}" in 1Password to share it with you.`,
+      `If this project has no vault yet, create it with: ${cmd('setup')}`,
+    ] });
   }
 
   vaultExists(name) { return this.run(['vault', 'get', name]).status === 0; }

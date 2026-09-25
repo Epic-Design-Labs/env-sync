@@ -3,6 +3,7 @@ import { appEntry } from './config.js';
 import { KEY_RE, parseTemplate } from './envfile.js';
 import { CliError, EXIT } from './errors.js';
 import { readSecret } from './fsutil.js';
+import { cmd } from './hint.js';
 import { entryLookup, SHARED } from './pull.js';
 
 export function runAdd({ cfg, op, key, to, app, log }) {
@@ -15,7 +16,7 @@ export function runAdd({ cfg, op, key, to, app, log }) {
   } else if (envRows.length === 1) {
     row = envRows[0];
   } else {
-    throw new CliError(EXIT.USAGE, `which template? pass --to with one of:\n  ${envRows.map((r) => r.template).join('\n  ')}`);
+    throw new CliError(EXIT.USAGE, `Which template should ${key} go in?`, { fix: envRows.map((r) => cmd('add', [key, '--to', r.template])) });
   }
 
   const template = fs.readFileSync(row.templateAbs, 'utf8');
@@ -26,7 +27,7 @@ export function runAdd({ cfg, op, key, to, app, log }) {
   const lookup = entryLookup(op);
   for (const t of new Set([SHARED, appEntry(row)])) {
     if (lookup.get(t)?.has(key)) {
-      throw new CliError(EXIT.USAGE, `${key} already exists in "${t}". To change its value, edit it in 1Password.`);
+      throw new CliError(EXIT.USAGE, `${key} already exists in "${t}"`, { fix: ['To change its value, edit the field in the 1Password app. Teammates then pull.'] });
     }
   }
 
@@ -42,6 +43,6 @@ export function runAdd({ cfg, op, key, to, app, log }) {
   fs.writeFileSync(row.templateAbs, template.replace(/\n?$/, '\n') + `${key}=\n`);
   log.out(`  created  ${entry} › ${key}`);
   log.out(`  added    ${key}= to ${row.template}`);
-  log.out('\n  Commit the template. Teammates then run: pnpm env:pull');
+  log.out(`\n  Commit the template. Teammates then run: ${cmd('pull')}`);
   return EXIT.OK;
 }

@@ -10,6 +10,7 @@ import { parseEnv, unquote } from './envfile.js';
 import { CliError, EXIT } from './errors.js';
 import { Op } from './op.js';
 import { entryLookup, renderTemplate, SHARED } from './pull.js';
+import { cmd } from './hint.js';
 
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.turbo', 'coverage', '.vercel']);
 const ENV_NAME = /^\.env(\.[A-Za-z0-9_-]+)*$/;
@@ -63,7 +64,7 @@ export function buildPlan({ rows, source, includes }) {
     if (!fs.existsSync(srcAbs)) { plan.notes.push(`${row.dest}: no local file, skipped`); continue; }
     const { order, values } = parseEnv(fs.readFileSync(srcAbs, 'utf8'));
     const t = { row, srcAbs, lines: [], expect: new Map(), secrets: [], literals: [] };
-    t.lines.push(`# ${row.template} — secrets are blank and filled from 1Password by name.`, '# Plain settings live here. Run `pnpm env:pull` to render it.', '');
+    t.lines.push(`# ${row.template} — secrets are blank and filled from 1Password by name.`, `# Plain settings live here. Run \`${cmd('pull')}\` to render it.`, '');
     const entry = appEntry(row);
     for (const key of order) {
       const raw = values.get(key);
@@ -157,7 +158,7 @@ function verify(plan, op, scratch) {
   return failures;
 }
 
-export function runSetup({ root, source, cfg, vault, account, rehearse, force, includes, scratch, log }) {
+export function runSetup({ root, source, cfg, vault, account, rehearse, force, includes, scratch, log, rerun = 'env-sync setup' }) {
   const rows = cfg?.rows ?? discover(source).map((r) => ({ ...r, templateAbs: path.join(root, r.template), destAbs: path.join(root, r.dest) }));
   if (!rows.length) throw new CliError(EXIT.USAGE, 'no gitignored .env files found, and no env-sync.conf to say which to use');
   if (!rehearse && !force) {
@@ -171,7 +172,7 @@ export function runSetup({ root, source, cfg, vault, account, rehearse, force, i
 
   const target = rehearse ? `${vault} (rehearsal)` : vault;
   const op = new Op({ account, vault: target, scratch });
-  op.requireSignedIn();
+  op.requireSignedIn();   // the CLI has already offered sign-in; this guards direct callers
   const exists = op.vaultExists(target);
   if (exists && rehearse) throw new CliError(EXIT.USAGE, `"${target}" is left over from an earlier rehearsal. Delete it first: op vault delete "${target}"`);
   if (exists && op.listTitles().size && !force) throw new CliError(EXIT.USAGE, `"${target}" already has entries. Re-run with --force to add to it.`);
@@ -200,7 +201,7 @@ export function runSetup({ root, source, cfg, vault, account, rehearse, force, i
     return EXIT.DRIFT;
   }
   log.out('verification clean: every template renders back to your local values');
-  if (rehearse) { log.out('\nRehearsal passed. Now run it for real: pnpm env:setup'); return EXIT.OK; }
+  if (rehearse) { log.out(`\nRehearsal passed. Now run it for real:\n  ${rerun}`); return EXIT.OK; }
 
   for (const t of plan.templates) {
     fs.mkdirSync(path.dirname(path.join(root, t.row.template)), { recursive: true });
