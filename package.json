@@ -17,7 +17,10 @@
   "scripts": {
     "test": "node --test test/*.test.js"
   },
-  "repository": "github:Epic-Design-Labs/env-sync",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Epic-Design-Labs/env-sync.git"
+  },
   "license": "UNLICENSED",
   "author": "Epic Design Labs",
   "homepage": "https://github.com/Epic-Design-Labs/env-sync#readme",
