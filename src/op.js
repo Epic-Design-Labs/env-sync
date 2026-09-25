@@ -13,6 +13,9 @@ function parseJson(text, what) {
   }
 }
 
+// op's wording for "you are not signed in" (as opposed to "no such vault").
+const SIGNED_OUT = /not currently signed in|no active session|sign ?in|authoriz|desktop app|no account found|not a known account|account "[^"]*" (not found|isn't)/i;
+
 export class Op {
   constructor({ account = null, vault, scratch }) {
     this.account = account;
@@ -35,14 +38,26 @@ export class Op {
     return r;
   }
 
+  signedOutError() {
+    const who = this.account ? ` to the "${this.account}" account` : '';
+    return new CliError(EXIT.NO_OP, `not signed in to 1Password${who}. Unlock the 1Password app (Settings → Developer → Integrate with 1Password CLI), approve its prompt, or run: op signin`);
+  }
+
+  /**
+   * `op whoami` only reports an existing session; with the desktop-app
+   * integration it never asks the app to unlock, so it says "signed out" even
+   * when a real command would succeed. Probe with a command that does ask.
+   */
+  requireSignedIn() {
+    const r = this.run(['vault', 'list', '--format', 'json']);
+    if (r.status !== 0) throw this.signedOutError();
+  }
+
   preflight() {
-    if (this.run(['whoami']).status !== 0) {
-      const who = this.account ? ` to the "${this.account}" account` : '';
-      throw new CliError(EXIT.NO_OP, `not signed in to 1Password${who}. Unlock the 1Password app (Settings → Developer → Integrate with 1Password CLI) or run: op signin`);
-    }
-    if (!this.vaultExists(this.vault)) {
-      throw new CliError(EXIT.NO_VAULT, `cannot reach the "${this.vault}" vault. Ask whoever manages it for access.`);
-    }
+    const r = this.run(['vault', 'get', this.vault]);
+    if (r.status === 0) return;
+    if (SIGNED_OUT.test(r.stderr || '')) throw this.signedOutError();
+    throw new CliError(EXIT.NO_VAULT, `cannot reach the "${this.vault}" vault. Ask whoever manages it for access.`);
   }
 
   vaultExists(name) { return this.run(['vault', 'get', name]).status === 0; }

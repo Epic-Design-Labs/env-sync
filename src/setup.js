@@ -171,7 +171,7 @@ export function runSetup({ root, source, cfg, vault, account, rehearse, force, i
 
   const target = rehearse ? `${vault} (rehearsal)` : vault;
   const op = new Op({ account, vault: target, scratch });
-  if (op.run(['whoami']).status !== 0) throw new CliError(EXIT.NO_OP, 'not signed in to 1Password. Unlock the app or run: op signin');
+  op.requireSignedIn();
   const exists = op.vaultExists(target);
   if (exists && rehearse) throw new CliError(EXIT.USAGE, `"${target}" is left over from an earlier rehearsal. Delete it first: op vault delete "${target}"`);
   if (exists && op.listTitles().size && !force) throw new CliError(EXIT.USAGE, `"${target}" already has entries. Re-run with --force to add to it.`);

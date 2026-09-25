@@ -50,7 +50,7 @@ CLERK_SECRET_KEY=
 ```jsonc
 // package.json
 "devDependencies": {
-  "@epicdesignlabs/env-sync": "github:Epic-Design-Labs/env-sync#v1.0.0"
+  "@epicdesignlabs/env-sync": "github:Epic-Design-Labs/env-sync#v1.0.1"
 },
 "scripts": {
   "env:pull": "env-sync pull",

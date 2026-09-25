@@ -14,7 +14,7 @@ const ai = a.indexOf('--account');
 if (ai >= 0) {
   const acct = a[ai + 1];
   a = a.filter((_, i) => i !== ai && i !== ai + 1);
-  if (process.env.FAKE_OP_ACCOUNT && acct !== process.env.FAKE_OP_ACCOUNT) die(`no account "${acct}"`);
+  if (process.env.FAKE_OP_ACCOUNT && acct !== process.env.FAKE_OP_ACCOUNT) die(`no account found for filter "${acct}"`);
 }
 const opt = (n) => (a.includes(n) ? a[a.indexOf(n) + 1] : undefined);
 const vault = () => st.vaults[opt('--vault')] ?? die(`no vault ${opt('--vault')}`);
@@ -23,7 +23,11 @@ if (a[0] === '--version') { console.log('2.39.0'); process.exit(0); }
 if (process.env.FAKE_OP_SIGNED_OUT === '1') die('You are not currently signed in.');
 const [c1, c2] = a;
 
-if (c1 === 'whoami') { console.log('fake'); process.exit(0); }
+// Like the real CLI with desktop-app integration: whoami only reports an
+// existing session and never asks the app to unlock, so it fails here even
+// though every real command succeeds. Code that probes with whoami breaks.
+if (c1 === 'whoami') die('no active session found for account epicdesignlabs');
+if (c1 === 'vault' && c2 === 'list') { console.log(JSON.stringify(Object.keys(st.vaults).map((name) => ({ name })))); process.exit(0); }
 if (c1 === 'vault' && c2 === 'get') process.exit(st.vaults[a[2]] ? 0 : 1);
 if (c1 === 'vault' && c2 === 'create') { st.vaults[a[2]] = { items: {} }; save(); process.exit(0); }
 if (c1 === 'vault' && c2 === 'delete') { delete st.vaults[a[2]]; save(); process.exit(0); }

@@ -1,6 +1,6 @@
 {
   "name": "@epicdesignlabs/env-sync",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Render .env files from 1Password, matching variables to fields by name.",
   "type": "module",
   "bin": { "env-sync": "bin/env-sync.js" },
