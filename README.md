@@ -48,11 +48,13 @@ CLERK_SECRET_KEY=
 
 ## Install
 
+```
+pnpm add -D @epicdesignlabs/env-sync      # or: npm install -D @epicdesignlabs/env-sync
+```
+
+Then add the scripts to `package.json`:
+
 ```jsonc
-// package.json
-"devDependencies": {
-  "@epicdesignlabs/env-sync": "github:Epic-Design-Labs/env-sync#v1.1.1"
-},
 "scripts": {
   "env:pull": "env-sync pull",
   "env:check": "env-sync check",
