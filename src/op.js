@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { CliError, EXIT, opSaid } from './errors.js';
 import { cmd } from './hint.js';
+import { forgetSession, loadSession, saveSession } from './session.js';
 
 // JSON.parse errors quote the text they fail on. Here that text is op's output,
 // which holds secret values, so the message is replaced with a value-free one.
@@ -29,6 +30,13 @@ export class Op {
     this.account = account;
     this.vault = vault;
     this.scratch = scratch;   // an owner-only directory for template files
+    this.fromCache = loadSession(account);   // names of a remembered session put into the environment
+  }
+
+  /** op refused the session: if it was a remembered one, drop it so it is not tried again. */
+  signedOut(stderr) {
+    if (this.fromCache.length) { forgetSession(this.account, this.fromCache); this.fromCache = []; }
+    return this.signInProblem(stderr);
   }
 
   run(args, { input } = {}) {
@@ -78,8 +86,8 @@ export class Op {
 
   /**
    * Runs `op signin` with the person's terminal attached, so op can ask for a
-   * password or show the app prompt. The session op prints is kept in this
-   * process's environment (so every later op call uses it) and never printed.
+   * password or show the app prompt. The session op prints is never printed:
+   * it goes into this process's environment, and is saved for later runs.
    */
   signInInteractive() {
     const args = ['signin', ...(this.account ? ['--account', this.account] : [])];
@@ -87,7 +95,9 @@ export class Op {
     if (r.status !== 0) {
       throw new CliError(EXIT.NO_OP, 'Sign-in did not complete', { fix: [`eval $(op signin${this.account ? ` --account ${this.account}` : ''})`, 'then run the command again.'] });
     }
-    for (const m of (r.stdout || '').matchAll(/export (OP_SESSION_\w+)="([^"]*)"/g)) process.env[m[1]] = m[2];
+    const vars = {};
+    for (const m of (r.stdout || '').matchAll(/export (OP_SESSION_\w+)="([^"]*)"/g)) process.env[m[1]] = vars[m[1]] = m[2];
+    if (Object.keys(vars).length) saveSession(this.account, vars);
   }
 
   /**
@@ -97,13 +107,13 @@ export class Op {
    */
   requireSignedIn() {
     const r = this.run(['vault', 'list', '--format', 'json']);
-    if (r.status !== 0) throw this.signInProblem(r.stderr);
+    if (r.status !== 0) throw this.signedOut(r.stderr);
   }
 
   preflight() {
     const r = this.run(['vault', 'get', this.vault]);
     if (r.status === 0) return;
-    if (SIGNED_OUT.test(r.stderr || '')) throw this.signInProblem(r.stderr);
+    if (SIGNED_OUT.test(r.stderr || '')) throw this.signedOut(r.stderr);
     throw new CliError(EXIT.NO_VAULT, `No access to the vault "${this.vault}"`, { said: opSaid(r.stderr), fix: [
       `Ask whoever manages "${this.vault}" in 1Password to share it with you.`,
       `If this project has no vault yet, create it with: ${cmd('setup')}`,

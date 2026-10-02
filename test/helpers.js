@@ -34,12 +34,14 @@ export function seed(dir, vaults) {
   fs.writeFileSync(path.join(dir, '..', `${path.basename(dir)}.state.json`), JSON.stringify(state));
 }
 export const statePath = (dir) => path.join(dir, '..', `${path.basename(dir)}.state.json`);
+/** Per-repo XDG_CACHE_HOME, so a saved 1Password session never leaks between tests or into ~/.cache. */
+export const cacheHome = (dir) => path.join(dir, '..', `${path.basename(dir)}.cache`);
 export const state = (dir) => (fs.existsSync(statePath(dir)) ? JSON.parse(fs.readFileSync(statePath(dir), 'utf8')) : { vaults: {} });
 
 export function run(cwd, args, { env = {}, input = '' } = {}) {
   const r = spawnSync(process.execPath, [BIN, ...args], {
     cwd, input, encoding: 'utf8',
-    env: { ...process.env, npm_config_user_agent: 'pnpm/9.15.4 node/v20', PATH: `${FAKE}:${process.env.PATH}`, FAKE_OP_STATE: statePath(cwd), ...env },
+    env: { ...process.env, npm_config_user_agent: 'pnpm/9.15.4 node/v20', PATH: `${FAKE}:${process.env.PATH}`, FAKE_OP_STATE: statePath(cwd), XDG_CACHE_HOME: cacheHome(cwd), ...env },
   });
   return { status: r.status, stdout: r.stdout, stderr: r.stderr, all: r.stdout + r.stderr };
 }

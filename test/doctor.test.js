@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
-import { CONF, exists, makeRepo, read, run, seed, write } from './helpers.js';
+import { cacheHome, CONF, exists, makeRepo, read, run, seed, write } from './helpers.js';
 
 const VAULT = { 'Test Dev': { Shared: { DATABASE_URL: 'postgres://SEKRETdb@localhost/x' } } };
 function project({ vault = VAULT, template = 'PORT=1\nDATABASE_URL=\n', ignore = true } = {}) {
@@ -104,13 +104,52 @@ describe('hints use the command the person actually runs', () => {
 });
 
 describe('fixes it offers, and only after asking', () => {
-  it('signs you in when you say yes, keeps the session in memory, never prints it', () => {
+  it('signs you in when you say yes, never prints the session', () => {
     const dir = project();
     const r = run(dir, ['pull', '--yes'], { env: { FAKE_OP_SIGNED_OUT: '1', ENV_SYNC_INTERACTIVE: '1' }, input: 'y\nhunter2\n' });
     assert.equal(r.status, 0, r.all);
     assert.match(r.stdout, /Sign in to 1Password now\?/);
     assert.match(read(dir, 'apps/server/.env'), /^DATABASE_URL=postgres:\/\/SEKRETdb@localhost\/x$/m);
     assert.ok(!r.all.includes('tok-SEKRETsession'), 'session token printed');
+  });
+  it('a sign-in carries over to the next command: doctor, then pull, asks once', () => {
+    const dir = project();
+    const signedOut = { FAKE_OP_SIGNED_OUT: '1' };
+    const first = run(dir, ['doctor'], { env: { ...signedOut, ENV_SYNC_INTERACTIVE: '1' }, input: 'y\nhunter2\n' });
+    assert.match(first.stdout, /Signed in to 1Password/);
+    const second = run(dir, ['pull', '--yes'], { env: signedOut });   // no terminal: it must not need to ask
+    assert.equal(second.status, 0, second.all);
+    assert.match(read(dir, 'apps/server/.env'), /^DATABASE_URL=postgres:\/\/SEKRETdb@localhost\/x$/m);
+    const saved = path.join(cacheHome(dir), 'env-sync', 'session-epicdesignlabs.json');
+    assert.equal(fs.statSync(saved).mode & 0o777, 0o600);
+    assert.equal(fs.statSync(path.dirname(saved)).mode & 0o777, 0o700);
+    for (const r of [first, second]) assert.ok(!r.all.includes('tok-SEKRETsession'), 'session token printed');
+  });
+  it('a saved session 1Password no longer accepts is deleted, and you are asked again', () => {
+    const dir = project();
+    const saved = path.join(cacheHome(dir), 'env-sync', 'session-epicdesignlabs.json');
+    write(dir, path.relative(dir, saved), JSON.stringify({ OP_SESSION_fake: 'tok-expired' }));
+    fs.chmodSync(saved, 0o600);
+    const r = run(dir, ['pull', '--yes'], { env: { FAKE_OP_SIGNED_OUT: '1' } });
+    assert.equal(r.status, 2, r.all); assert.match(r.all, /Not signed in to 1Password/);
+    assert.ok(!fs.existsSync(saved), 'stale session kept');
+  });
+  it('a saved session other users could read is never used', () => {
+    const dir = project();
+    const saved = path.join(cacheHome(dir), 'env-sync', 'session-epicdesignlabs.json');
+    write(dir, path.relative(dir, saved), JSON.stringify({ OP_SESSION_fake: 'tok-SEKRETsession' }));
+    fs.chmodSync(saved, 0o644);
+    const r = run(dir, ['pull', '--yes'], { env: { FAKE_OP_SIGNED_OUT: '1' } });
+    assert.equal(r.status, 2, r.all);
+    assert.ok(!fs.existsSync(saved), 'loose session file kept');
+  });
+  it('your own shell session wins over a saved one', () => {
+    const dir = project();
+    const saved = path.join(cacheHome(dir), 'env-sync', 'session-epicdesignlabs.json');
+    write(dir, path.relative(dir, saved), JSON.stringify({ OP_SESSION_fake: 'tok-expired' }));
+    fs.chmodSync(saved, 0o600);
+    const r = run(dir, ['pull', '--yes'], { env: { FAKE_OP_SIGNED_OUT: '1', OP_SESSION_fake: 'tok-SEKRETsession' } });
+    assert.equal(r.status, 0, r.all);
   });
   it('saying no leaves you with the manual fix and exit 2', () => {
     const r = run(project(), ['pull', '--yes'], { env: { FAKE_OP_SIGNED_OUT: '1', ENV_SYNC_INTERACTIVE: '1' }, input: 'n\n' });

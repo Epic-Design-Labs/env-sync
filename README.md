@@ -1,20 +1,231 @@
 # env-sync
 
-Render your project's `.env` files from 1Password. Each variable is matched to the 1Password field **with the same name**, so nobody writes a path by hand and no secret ever lives in git.
+Render `.env` files from 1Password, matching each variable to the 1Password field **with the same name**.
+
+Your repo commits a `.env.template` that lists every variable, with the secret ones left blank. `env-sync pull` fills the blanks from a 1Password vault and writes the real `.env`. No secret ever lives in git, nobody passes values around in chat, and rotating a secret means editing one field in 1Password.
+
+Zero dependencies. Node 20+. Works with any project layout: one app or a monorepo.
+
+## Install
+
+```sh
+npm install -D edl-env-sync     # or: pnpm add -D edl-env-sync / yarn add -D edl-env-sync
+npm install -g edl-env-sync     # or globally, to run `env-sync` anywhere
+```
+
+You also need:
+
+- the [1Password CLI](https://developer.1password.com/docs/cli/get-started/) (`brew install 1password-cli`)
+- access to the project's 1Password vault
+
+## Commands
+
+The package installs one command, `env-sync`.
 
 ```
-pnpm env:pull     # write .env files from 1Password
-pnpm env:check    # exit 1 if your .env files are out of date
-pnpm env:add KEY  # add a new secret to 1Password and the template
-pnpm env:doctor   # check your setup, and show how to fix each problem
-pnpm env:setup    # one-time: move a project's existing values into 1Password
+env-sync pull   [--yes] [--dry-run] [--only <dest>]   write .env files from 1Password (the default)
+env-sync check  [--only <dest>]                       exit 1 if any .env is out of date; never writes
+env-sync doctor                                       check your setup, and show how to fix each problem
+env-sync add KEY [--to <template>] [--app]            add a new secret to 1Password and the template
+env-sync setup  [--rehearse] [--vault <name>] [--account <name>] [--source <dir>]
+                [--include KEY@path] [--force]        one-time: move a project's existing values into 1Password
+env-sync help [command]                               short help for a command
+env-sync --version
 ```
 
-Owned by Epic Design Labs, for every EDL project. Zero dependencies, Node 20+.
+| Flag | Command | Effect |
+|---|---|---|
+| `--yes`, `-y` | `pull` | write without asking |
+| `--dry-run` | `pull` | show what would change, write nothing |
+| `--only <dest>` | `pull`, `check` | handle one file, e.g. `--only apps/api/.env` |
+| `--to <template>` | `add` | which template gets the key, when there are several |
+| `--app` | `add` | store the value in the app's own entry instead of Shared |
+| `--rehearse` | `setup` | trial run in a throwaway vault, deleted afterwards |
+| `--vault`, `--account` | `setup` | vault to create, 1Password account to use |
+| `--source <dir>` | `setup` | read the current values from another checkout |
+| `--include KEY@path` | `setup` | upload a key that was excluded as production-looking |
+| `--force` | `setup` | overwrite existing templates, or add to a non-empty vault |
+
+If you prefer package scripts, alias them. Hints in env-sync's output then use the form you ran, such as `pnpm env:pull`.
+
+```jsonc
+"scripts": {
+  "env:pull": "env-sync pull",
+  "env:check": "env-sync check",
+  "env:add": "env-sync add",
+  "env:doctor": "env-sync doctor"
+}
+```
+
+## How it works
+
+There are three pieces:
+
+| Piece | Lives in | Holds |
+|---|---|---|
+| `env-sync.conf` | your repo, committed | the 1Password account and vault, and which template becomes which file |
+| `.env.template` files | your repo, committed | every variable name; secrets blank, plain settings with their value |
+| a vault | 1Password | the secret values, as fields named like the variables |
+
+```mermaid
+flowchart LR
+  subgraph repo["Your repo (committed)"]
+    conf["env-sync.conf<br/>account, vault, rows"]
+    tpl[".env.template<br/>DATABASE_URL= (blank: secret)<br/>PORT=3000 (setting)"]
+  end
+  subgraph vault["1Password vault"]
+    app["app's own entry<br/>(e.g. apps/web)"]
+    shared["Shared entry"]
+    docs["documents<br/>(e.g. signing.pem)"]
+  end
+  conf --> es["env-sync"]
+  tpl --> es
+  es -- "op CLI" --> app
+  es -- "op CLI" --> shared
+  es -- "op CLI" --> docs
+  es --> out[".env files<br/>mode 600, gitignored"]
+  es --> files["document files<br/>mode 600, gitignored"]
+```
+
+env-sync never talks to 1Password over the network itself. It runs the local `op` CLI, so it can do exactly what your own 1Password sign-in allows, and nothing more.
+
+### Filling a template
+
+Each line of a template is handled by name:
+
+```mermaid
+flowchart TD
+  line["template line"] --> v{"has a value?"}
+  v -- "PORT=3000" --> copy["copied as written"]
+  v -- "KEY=" --> a{"field KEY in the<br/>app's own entry?"}
+  a -- yes --> use1["use it"]
+  a -- no --> s{"field KEY in<br/>the Shared entry?"}
+  s -- yes --> use2["use it"]
+  s -- no --> miss["reported missing:<br/>no file is written"]
+```
+
+- The **app's own entry** is titled after the template's directory: `apps/web/.env.template` reads from the entry `apps/web`. It only needs to exist when that app's value differs from everyone else's.
+- The **Shared** entry holds everything else, so each secret is rotated in one place.
+- `KEY=""` is an intentionally empty setting and is copied as written.
+- A `file` row fetches the 1Password **document** titled with the file's name, such as `signing.pem`.
+
+### What `pull` does, in order
+
+1. Finds the repo root (`git rev-parse --show-toplevel`) and reads `env-sync.conf`.
+2. Checks that `.env-sync.*` is gitignored. Secrets pass through that scratch folder on their way to disk.
+3. Lists the vault's entries, then reads each entry it needs once, with `op item get --reveal`.
+4. Renders every template and fetches every document **in memory**. If anything is missing, it names all of it and writes nothing.
+5. For each file, shows the change by **name only** (`+` new, `~` changed, `-` dropped) and asks before writing.
+6. Writes each file in one step (scratch file, then rename) with mode `600`.
+
+`check` does steps 1–5 and exits `1` if anything differs. `doctor` runs every check top to bottom and explains each failure.
+
+## Configuration
+
+`env-sync.conf`, at the repo root:
+
+```
+account = acme                                  # 1Password account (sign-in address or shorthand)
+vault   = Acme Dev                              # one vault per project
+
+env  apps/api/.env.template -> apps/api/.env
+env  apps/web/.env.template -> apps/web/.env.local
+file .secrets/signing.pem                       # a 1Password document titled "signing.pem"
+file .secrets/ca.pem mode=400                   # optional mode; owner-only modes only
+```
+
+`apps/api/.env.template`:
+
+```
+PORT=3000
+NODE_ENV=development
+DATABASE_URL=
+STRIPE_SECRET_KEY=
+```
+
+Full reference: [Configuration](docs/configuration.md).
+
+## Signing in
+
+**Recommended:** in the 1Password app, open **Settings → Developer**, turn on **Integrate with 1Password CLI**, and add your account to the app. Each command then asks for Touch ID, and no password or token is handled in the terminal.
+
+Without the app integration, env-sync offers to sign you in with your password the first time a command needs 1Password. It remembers that sign-in for later commands until 1Password expires it, after 30 idle minutes. The session is saved to `~/.cache/env-sync/`, readable only by you, and deleted as soon as 1Password rejects it. To sign out early, run `op signout --account <account>`.
+
+## Everyday use
+
+| You want to… | Run | Then everyone else |
+|---|---|---|
+| Start on a project | get access to its vault, then `env-sync pull` | — |
+| See if you're current | `env-sync check` | — |
+| Rotate a secret | edit the field in 1Password | `env-sync pull` |
+| Add a secret | `env-sync add STRIPE_SECRET_KEY --to apps/api/.env.template`, then commit the template | `env-sync pull` |
+| Use an existing secret in another app | add a blank `KEY=` line to that app's template and commit it | `env-sync pull` |
+| Fix a problem | `env-sync doctor` | — |
+
+`add` asks for the value without showing it, refuses a name that already exists (so it can never overwrite the team's value), and reads the value back from 1Password before touching the template.
+
+There is deliberately no push from a laptop to the vault. It would let one person's stale value overwrite the one everyone uses.
+
+## Setting up a new project
+
+Run it once, from the checkout that holds the current `.env` values:
+
+```sh
+env-sync setup --vault "Acme Dev" --rehearse   # trial run in a throwaway vault, deleted afterwards
+env-sync setup --vault "Acme Dev"              # for real
+```
+
+`setup` reads each `.env` file (the ones in `env-sync.conf`, or the gitignored ones it finds) and sorts every key:
+
+- **secret → 1Password**: names like `*_KEY`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`, connection strings, and anything that looks random. Unknown keys count as secrets, which is the safe direction.
+- **setting → template**: ports, hosts, regions, paths, flags, plain URLs.
+- **excluded**: anything that looks like production, such as a name containing `PROD`/`PRODUCTION`, a `_live_` key, or a database on a non-local host. The vault is for development. Override a false positive with `--include KEY@path/to/.env`.
+- **made portable**: absolute paths inside the repo are rewritten relative to the `.env` file.
+
+When two apps hold different values under one name, the second app gets its own entry. Before writing any template, `setup` renders every template back from 1Password and checks each value against your files. Its output never contains a secret value. Full walkthrough: [Setting up a project](docs/setting-up-a-project.md).
+
+## When something is wrong
+
+Run `env-sync doctor`. It checks Node, the 1Password CLI, the repo, `env-sync.conf`, the `.gitignore` rule, sign-in, vault access, the templates, every variable and document, and whether your files are current. For each problem it shows what 1Password said and the exact command that fixes it. Checks that depend on a failed one are marked skipped.
+
+```
+  ✓ Node 22.11.0 (needs 20+)
+  ✓ 1Password CLI 2.39.0
+  ✗ Not signed in to 1Password (account "acme")
+      1Password said: You are not currently signed in.
+      Fix: eval $(op signin --account acme)
+           Or use Touch ID instead of a password: 1Password → Settings → Developer →
+           "Integrate with 1Password CLI", and add your acme account to the app.
+  Sign in to 1Password now? [y/N]
+```
+
+In a terminal, env-sync offers the safe local fixes (signing in, adding the `.gitignore` rule) and applies them only if you answer yes. Anything that involves other people, like vault access, is only explained. With no terminal attached, as in CI, it never prompts. Every message and its fix: [Troubleshooting](docs/troubleshooting.md).
+
+## Guarantees
+
+- **No secret value is printed, logged, or written to git.** Output shows variable names only.
+- **Nothing is half-written.** If any variable or document is missing, no file changes.
+- **Files are owner-only and written atomically.** Default mode `600`; a mode that grants group or world access is refused.
+- **Declining a prompt changes nothing.**
+- **The account is pinned** by `env-sync.conf`, so a second signed-in 1Password account can never answer by mistake.
+- **`pull`, `check` and `doctor` only read the vault.** Only `setup` and `add` write, and `add` never overwrites.
+
+The limits, including the saved sign-in session and `add`'s brief process-list exposure, are in [Security](docs/security.md).
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | OK, nothing out of date |
+| 1 | `check` or `doctor` found an out-of-date file, or `setup` verification failed |
+| 2 | 1Password CLI missing, or not signed in |
+| 3 | vault unreachable, or the project isn't set up yet |
+| 4 | a variable or document is not in 1Password |
+| 5 | bad config or arguments, or an unsafe repo setup |
 
 ## Documentation
 
-The full guides ship with the package, in [`docs/`](docs/README.md), which is also at `node_modules/edl-env-sync/docs/` once installed. `env-sync help <command>` gives the short version in your terminal.
+The guides ship with the package in [`docs/`](docs/README.md) (also at `node_modules/edl-env-sync/docs/`):
 
 - [Getting started](docs/getting-started.md): joining a project that already uses env-sync
 - [Setting up a project](docs/setting-up-a-project.md): moving a project's secrets into 1Password
@@ -23,144 +234,12 @@ The full guides ship with the package, in [`docs/`](docs/README.md), which is al
 - [Troubleshooting](docs/troubleshooting.md): every error message and its fix
 - [Security](docs/security.md): what it guarantees about your secrets, and the limits
 
-## How it works
-
-Each repo commits two kinds of file.
-
-**`env-sync.conf`** says which 1Password account and vault the project uses, and which files to fill:
-
-```
-account = epicdesignlabs
-vault   = Throttle Dev
-
-env  apps/server/.env.template -> apps/server/.env
-env  apps/dashboard/.env.template -> apps/dashboard/.env.local
-file .secrets/gr4vy-sandbox.pem
-```
-
-**`.env.template`** reads like a `.env.example`: every variable the app needs, with the secret ones left blank.
-
-```
-PORT=3011
-NODE_ENV=development
-DATABASE_URL=
-CLERK_SECRET_KEY=
-```
-
-`env-sync pull` fills each blank variable from the field of the same name. It looks in the app's own entry first (titled after the template's directory, such as `apps/server`), then in the vault's **Shared** entry. Lines with a value, like `PORT=3011`, are copied as written. `KEY=""` is an intentionally empty setting.
-
-| In the vault "Throttle Dev" | Holds |
-|---|---|
-| **Shared** | every secret, as a field named like its variable. One place to rotate each. |
-| **apps/demo-store** *(only if needed)* | values for that app that differ from Shared |
-| **gr4vy-sandbox.pem** | a document, written to the path in the `file` row |
-
-`file` rows fetch the 1Password document titled with the file's name.
-
-## Install
-
-```
-npm install -D edl-env-sync      # or: pnpm add -D edl-env-sync
-```
-
-Then add the scripts to `package.json`:
-
-```jsonc
-"scripts": {
-  "env:pull": "env-sync pull",
-  "env:check": "env-sync check",
-  "env:add": "env-sync add",
-  "env:doctor": "env-sync doctor",
-  "env:setup": "env-sync setup"
-}
-```
-
-You also need the [1Password CLI](https://developer.1password.com/docs/cli/get-started/) with **Settings → Developer → Integrate with 1Password CLI** turned on in the desktop app, and `.env-sync.*` in your `.gitignore`. `setup` adds that line for you.
-
-## Everyday use
-
-| You want to… | Do this | Then everyone else |
-|---|---|---|
-| Start on a project | get access to its vault, then `pnpm env:pull` | — |
-| Rotate a secret | edit the field in 1Password | `pnpm env:pull` |
-| Add a secret | `pnpm env:add STRIPE_SECRET_KEY`, then commit the template | `pnpm env:pull` |
-| Check you're current | `pnpm env:check` | — |
-
-`add` asks for the value without showing it, refuses a name that already exists (so it can never overwrite the team's value), and writes to Shared. Use `--app` to write to the app's own entry instead, and `--to <template>` when the repo has more than one.
-
-There is deliberately no push from a laptop to the vault. It would let one person's stale value overwrite the one everyone uses.
-
-## Setting up a new project
-
-Run it once, in the checkout that holds the current values:
-
-```
-pnpm env:setup --vault "Acme Dev" --rehearse   # dry run in a throwaway vault, deleted afterwards
-pnpm env:setup --vault "Acme Dev"              # for real
-```
-
-`setup` reads each `.env` file, listed in `env-sync.conf` or found among your gitignored files, and decides for each key:
-
-- **secret → 1Password**: names like `*_KEY`, `*_SECRET`, `*_TOKEN`, `*_PASSWORD`, connection strings, and anything that looks random. Unknown keys are treated as secrets, the safe direction.
-- **setting → template**: ports, hosts, regions, paths, flags, plain URLs.
-- **excluded**: anything that looks like production. That means a name containing `PROD`/`PRODUCTION`, a `_live_` key, or a database on a non-local host. The vault is for development. Override a false positive with `--include KEY@path/to/.env`.
-- **made portable**: absolute paths inside the repo are rewritten relative to the `.env` file, so they work on every machine.
-
-When two apps hold different values under one name, the second app gets its own entry. Before writing a single template, `setup` renders every template back from 1Password and checks each value against your file. Nothing it prints ever contains a secret value. Use `--source <dir>` to read values from a different checkout.
-
-## When something is wrong
-
-Run `pnpm env:doctor`. It checks everything the tool depends on, top to bottom, and for each problem shows what is wrong, what 1Password actually said, and the exact command that fixes it, using your own account and vault names. Checks that depend on a failed one are marked skipped rather than piling up follow-on errors.
-
-```
-  ✓ Node 20.20.2 (needs 20+)
-  ✓ 1Password CLI 2.39.0
-  ✗ Not signed in to 1Password (account "epicdesignlabs")
-      1Password said: You are not currently signed in.
-      Fix: eval $(op signin --account epicdesignlabs)
-           Or use Touch ID instead of a password: 1Password → Settings → Developer →
-           "Integrate with 1Password CLI", and add your epicdesignlabs account to the app.
-  · Vault "Throttle Dev"  (skipped until signed in)
-```
-
-Every other command runs the same checks first and stops at the first problem with the same explanation. In a terminal, a problem with a safe local fix is offered and applied only if you answer yes: **signing in** (it runs the 1Password sign-in for you and keeps the session for that run, so there's no `eval`) and **adding the `.gitignore` rule**. Anything involving other people, such as vault access, is only explained. With no terminal attached, as in CI, nothing prompts.
-
-| You see | What it means | Fix |
-|---|---|---|
-| Not signed in to 1Password | no session for the account in `env-sync.conf` | answer yes when asked, or `eval $(op signin --account <account>)` |
-| The 1Password app did not answer | CLI integration is on, but the app is locked or closed | open and unlock the app |
-| The 1Password CLI does not know the account | the account isn't in the app or the CLI | add it in the app, or `op account add --address <account>.1password.com` |
-| No access to the vault | the vault isn't shared with you, or doesn't exist yet | ask its owner, or create it with `env:setup` |
-| Template missing | the template isn't in your checkout | `git pull` |
-| Not in 1Password | a template names a variable the vault doesn't have | `pnpm env:add KEY --to <template>`, or fix the typo |
-
-Hints use the command you actually ran with: `pnpm env:pull`, `npm run env:pull`, `yarn env:pull`, or `npx env-sync pull`.
-
-## Guarantees
-
-- **No secret value is printed, logged or written to git.** Diffs show key names only.
-- **Nothing is written unless everything resolves.** If any variable is missing from 1Password, `pull` names all of them and writes no file.
-- **Writes are atomic and owner-only.** Files are rendered into a scratch directory in the repo and renamed into place. The default mode is `600`, and a mode that grants group or world access is refused.
-- **Declining a prompt changes nothing.**
-- **The 1Password account is pinned** by `env-sync.conf`, so a second signed-in account can never answer by mistake.
-
-`add` passes the new value to `op item edit` as an argument, which briefly makes it visible in the local process list. That's the trade for using 1Password's additive edit, which can't rewrite the rest of the entry.
-
-## Exit codes
-
-| Code | Meaning |
-|---|---|
-| 0 | ok, nothing out of date |
-| 1 | `check` found an out-of-date file, or `setup` verification failed |
-| 2 | 1Password CLI missing or signed out |
-| 3 | vault unreachable |
-| 4 | a variable or document is not in 1Password |
-| 5 | bad config or arguments, or an unsafe repo setup |
-
 ## Development
 
-```
+```sh
 npm test
 ```
 
 The tests run the real CLI against a fake `op` (`test/fake-op/op`). No network, no vault.
+
+Maintained by [Epic Design Labs](https://github.com/Epic-Design-Labs).

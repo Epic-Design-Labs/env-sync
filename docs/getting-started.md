@@ -14,7 +14,7 @@ Other systems: https://developer.1password.com/docs/cli/get-started/
 
 **Recommended: let the CLI use the 1Password app.** Open 1Password → **Settings → Developer** → turn on **Integrate with 1Password CLI**, and make sure your work account is signed in to the app. After that, 1Password asks for Touch ID when env-sync needs it, and you never type a password in the terminal.
 
-Without this, sign in in the terminal instead, once per session (about 30 minutes):
+Without it, env-sync offers to sign you in with your password the first time a command needs 1Password, and remembers that sign-in for later commands until 1Password expires it (after 30 idle minutes). You can also sign in yourself, in your shell:
 
 ```sh
 eval $(op signin --account epicdesignlabs)

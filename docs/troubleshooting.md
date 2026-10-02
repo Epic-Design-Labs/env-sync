@@ -10,7 +10,7 @@ In a terminal, env-sync **offers** the safe fixes (signing in, adding the `.giti
 Install it: `brew install 1password-cli`. Other systems: https://developer.1password.com/docs/cli/get-started/
 
 **`Not signed in to 1Password (account "X")`**
-There's no active session for that account. Either answer `y` when env-sync offers to sign you in, or run `eval $(op signin --account X)` yourself. To use Touch ID instead of a password: 1Password → Settings → Developer → **Integrate with 1Password CLI**, and add the account to the app.
+There's no active session for that account. Either answer `y` when env-sync offers to sign you in (it remembers the sign-in for later commands until 1Password expires it), or run `eval $(op signin --account X)` yourself. To use Touch ID instead of a password: 1Password → Settings → Developer → **Integrate with 1Password CLI**, and add the account to the app.
 
 **`The 1Password app did not answer`**
 CLI integration is on, but the app is closed or locked. Open 1Password and unlock it.
