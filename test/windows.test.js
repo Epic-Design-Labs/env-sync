@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'node:test';
-import { Op, sessionVars } from '../src/op.js';
+import { notInstalled, Op, sessionVars } from '../src/op.js';
 import { staleRows } from '../src/pull.js';
 import { loadSession, sessionFile } from '../src/session.js';
 
@@ -44,11 +44,50 @@ describe('on Windows', () => {
     assert.ok(fs.existsSync(file));
   });
 
-  it('the sign-in hint works in PowerShell and Git Bash', () => {
-    const fix = new Op({ account: 'acme', vault: 'V', scratch: null }).signInProblem('You are not currently signed in.').fix.join('\n');
+  const signedOutFix = () => new Op({ account: 'acme', vault: 'V', scratch: null }).signInProblem('You are not currently signed in.').fix.join('\n');
+
+  it('in Git Bash, the sign-in hint is the bash form only', () => {
+    process.env.MSYSTEM = 'MINGW64';
+    try {
+      const fix = signedOutFix();
+      assert.match(fix, /eval "\$\(op signin --account acme \| sed 's\/\^\\\$env:\/export \/'\)"/);
+      assert.doesNotMatch(fix, /Invoke-Expression/);
+    } finally { delete process.env.MSYSTEM; }
+  });
+
+  it('in PowerShell or cmd, the sign-in hint is the PowerShell form, with a pointer away from cmd', () => {
+    delete process.env.MSYSTEM;
+    const fix = signedOutFix();
     assert.match(fix, /Invoke-Expression \$\(op signin --account acme\)/);
-    assert.match(fix, /sed 's\/\^\\\$env:\/export \/'/);
-    assert.match(fix, /Windows Hello/);
+    assert.match(fix, /cmd/);
+    assert.doesNotMatch(fix, /sed|eval/);
+  });
+
+  it('talks about Windows Hello, never Touch ID', () => {
+    const op = new Op({ account: 'acme', vault: 'V', scratch: null });
+    for (const said of ['You are not currently signed in.', 'no account found for filter "acme"', 'error initializing client: connecting to desktop app: timed out']) {
+      const fix = op.signInProblem(said).fix.join('\n');
+      assert.doesNotMatch(fix, /Touch ID/, said);
+    }
+    assert.match(op.signInProblem('no account found for filter "acme"').fix.join('\n'), /Windows Hello/);
+  });
+
+  it('suggests winget, not brew, when op is missing', () => {
+    const fix = notInstalled().fix.join('\n');
+    assert.match(fix, /winget install AgileBits\.1Password\.CLI/);
+    assert.doesNotMatch(fix, /brew/);
+  });
+});
+
+describe('on macOS', () => {
+  beforeEach(() => pretend('darwin'));
+  afterEach(() => pretend(real));
+  it('keeps the brew, eval and Touch ID hints', () => {
+    assert.match(notInstalled().fix.join('\n'), /brew install 1password-cli/);
+    const fix = new Op({ account: 'acme', vault: 'V', scratch: null }).signInProblem('You are not currently signed in.').fix.join('\n');
+    assert.match(fix, /eval \$\(op signin --account acme\)/);
+    assert.match(fix, /Touch ID/);
+    assert.doesNotMatch(fix, /Invoke-Expression|Windows Hello/);
   });
 });
 

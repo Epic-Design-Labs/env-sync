@@ -5,6 +5,14 @@ import { CliError, EXIT } from './errors.js';
 
 /** Windows has no Unix permission bits: chmod only toggles read-only, stat says 0o666. */
 export const windows = () => process.platform === 'win32';
+/**
+ * Git Bash (MSYS2) sets MSYSTEM, and it survives into npm/pnpm scripts, which run
+ * through cmd.exe. PowerShell and cmd can't be told apart reliably (PSModulePath is
+ * set system-wide), so every other Windows shell gets PowerShell advice.
+ */
+export const gitBash = () => windows() && Boolean(process.env.MSYSTEM);
+/** The 1Password app's biometric unlock, by its name on this OS. */
+export const unlockName = () => (windows() ? 'Windows Hello' : 'Touch ID');
 
 export function repoRoot(cwd = process.cwd()) {
   const r = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' });

@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { CliError, EXIT, opSaid } from './errors.js';
 import { cmd } from './hint.js';
-import { windows } from './fsutil.js';
+import { gitBash, unlockName, windows } from './fsutil.js';
 import { forgetSession, loadSession, saveSession } from './session.js';
 
 /** The session variables `op signin` prints: `export X="…"` on Unix, `$env:X="…"` on Windows. */
@@ -15,10 +15,14 @@ export function sessionVars(stdout) {
   return vars;
 }
 
-/** How to sign in by hand, in the person's shell. */
+/**
+ * How to sign in by hand, in the person's shell. On Windows op prints PowerShell
+ * syntax (`$env:X="…"`), even in Git Bash, so bash needs it rewritten first.
+ */
 function signinHint(acct) {
-  if (!windows()) return [`eval $(op signin${acct})`];
-  return [`PowerShell: Invoke-Expression $(op signin${acct})`, `Git Bash:   eval "$(op signin${acct} | sed 's/^\\$env:/export /')"`];
+  if (gitBash()) return [`eval "$(op signin${acct} | sed 's/^\\$env:/export /')"`];
+  if (windows()) return [`Invoke-Expression $(op signin${acct})`, '(in PowerShell; from cmd, open PowerShell and run it there)'];
+  return [`eval $(op signin${acct})`];
 }
 
 // JSON.parse errors quote the text they fail on. Here that text is op's output,
@@ -34,7 +38,7 @@ const SIGNED_OUT = /not currently signed in|no active session|sign ?in|authoriz|
 
 export function notInstalled() {
   return new CliError(EXIT.NO_OP, 'The 1Password CLI (op) is not installed', { fix: [
-    'brew install 1password-cli',
+    windows() ? 'winget install AgileBits.1Password.CLI' : 'brew install 1password-cli',
     'Other systems: https://developer.1password.com/docs/cli/get-started/',
   ] });
 }
@@ -78,12 +82,13 @@ export class Op {
       return new CliError(EXIT.NO_OP, 'The 1Password app did not answer', { said, fix: [
         'Open the 1Password app and unlock it.',
         'Then check Settings → Developer → "Integrate with 1Password CLI" is on.',
+        ...(windows() ? ['(That option needs Windows Hello on first: Settings → Security.)'] : []),
       ] });
     }
     if (/no account found|not a known account|account "[^"]*" (not found|isn't)/i.test(stderr)) {
       const address = a && !a.includes('.') ? `${a}.1password.com` : a;
       return new CliError(EXIT.NO_OP, `The 1Password CLI does not know the account "${a}"`, { said, fix: [
-        `Add it in the 1Password app (then Touch ID works), or add it to the CLI: op account add --address ${address}`,
+        `Add it in the 1Password app (then ${unlockName()} works), or add it to the CLI: op account add --address ${address}`,
         `If "${a}" is the wrong account, fix the account line in env-sync.conf.`,
       ] });
     }
@@ -94,7 +99,7 @@ export class Op {
       said,
       fix: [
         ...signinHint(acct),
-        `Or use ${windows() ? 'Windows Hello' : 'Touch ID'} instead of a password: 1Password → Settings → Developer →`,
+        `Or use ${unlockName()} instead of a password: 1Password → Settings → Developer →`,
         `"Integrate with 1Password CLI", and add ${a ? `your ${a} account` : 'your account'} to the app.`,
       ],
       autofix: { prompt: 'Sign in to 1Password now?', run: () => this.signInInteractive() },

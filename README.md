@@ -155,7 +155,7 @@ To sign in by hand instead, run `eval $(op signin --account <account>)` in your 
 
 ## Windows
 
-env-sync 1.3.3 and later runs natively on Windows, in PowerShell or Git Bash. Teammates follow the same steps as on a Mac, with these differences:
+env-sync 1.3.5 and later runs natively on Windows, in PowerShell or Git Bash. Teammates follow the same steps as on a Mac, with these differences:
 
 1. **Install the CLI** with `winget install AgileBits.1Password.CLI`, and Node 20+.
 2. **Use Windows Hello instead of Touch ID.** In the 1Password app, first turn on **Settings → Security → Windows Hello**. The **Settings → Developer → Integrate with 1Password CLI** option only appears after that. With it on, no password or session token touches the terminal. This is the recommended setup.
@@ -166,7 +166,7 @@ env-sync 1.3.3 and later runs natively on Windows, in PowerShell or Git Bash. Te
    eval "$(op signin --account epicdesignlabs | sed 's/^\$env:/export /')"        # Git Bash
    ```
 
-   Don't run the PowerShell form in Git Bash, or `$(op signin)` without the `sed`. Bash then tries to run the session line as a command, and the error message (`:OP_SESSION_…=…: command not found`) shows your session token. If that happens, run `op signout --account <account>` to end that session.
+   env-sync's own hints already show only the line for your shell: it recognises Git Bash, and gives every other Windows shell the PowerShell form (cmd users: open PowerShell). Don't run the PowerShell form in Git Bash, or `$(op signin)` without the `sed`. Bash then tries to run the session line as a command, and the error message (`:OP_SESSION_…=…: command not found`) shows your session token. If that happens, run `op signout --account <account>` to end that session.
 4. **File permissions.** Windows has no Unix permission bits, so the `600` mode and any `mode=` setting are not applied. Files rely on your user folder's access rules instead, which keep other users of the machine out. env-sync doesn't report this as out of date.
 
 **WSL** works too, as a normal Linux setup. Keep the repo in the Linux home (`~/code/…`), not under `/mnt/c/…`. Files on the Windows drive have no real permissions in WSL, so `check` would always report them out of date.
