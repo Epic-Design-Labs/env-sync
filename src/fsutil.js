@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { CliError, EXIT } from './errors.js';
 
+/** Windows has no Unix permission bits: chmod only toggles read-only, stat says 0o666. */
+export const windows = () => process.platform === 'win32';
+
 export function repoRoot(cwd = process.cwd()) {
   const r = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' });
   if (r.status !== 0) throw new CliError(EXIT.USAGE, 'Not inside a git repository', { fix: ['Run this from inside the project\'s git checkout.'] });
@@ -51,6 +54,7 @@ for (const [sig, code] of [['SIGINT', 130], ['SIGTERM', 143]]) {
 /** Writes `data` to `dest` atomically: scratch file with final mode, then rename. */
 export function atomicWrite(scratch, dest, data, mode) {
   const tmp = path.join(scratch, `write-${process.pid}-${Math.random().toString(36).slice(2)}`);
+  if (windows()) mode = 0o600;   // a read-only mode like 400 would make the next rename fail
   fs.writeFileSync(tmp, data, { mode });
   fs.chmodSync(tmp, mode);
   fs.mkdirSync(path.dirname(dest), { recursive: true });

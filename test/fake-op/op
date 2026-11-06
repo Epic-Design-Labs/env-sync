@@ -51,6 +51,9 @@ if (c1 === 'item' && c2 === 'get') {
   process.exit(0);
 }
 if (c1 === 'item' && c2 === 'create') {
+  // Real op on Windows refuses --template when stdin is a pipe, even an empty one.
+  const s = fs.fstatSync(0);
+  if (s.isFIFO() || s.isSocket()) die('cannot create an item from template and stdin at the same time');
   const t = JSON.parse(fs.readFileSync(opt('--template'), 'utf8'));
   if (vault().items[t.title]) die(`"${t.title}" already exists`);
   const corrupt = process.env.FAKE_OP_CORRUPT_CREATE === '1';   // simulate a vault that stores the wrong value

@@ -5,7 +5,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { CliError, EXIT, opSaid } from './errors.js';
 import { cmd } from './hint.js';
+import { windows } from './fsutil.js';
 import { forgetSession, loadSession, saveSession } from './session.js';
+
+/** The session variables `op signin` prints: `export X="…"` on Unix, `$env:X="…"` on Windows. */
+export function sessionVars(stdout) {
+  const vars = {};
+  for (const m of (stdout || '').matchAll(/(?:export |\$env:)(OP_SESSION_\w+)="([^"]*)"/g)) vars[m[1]] = m[2];
+  return vars;
+}
+
+/** How to sign in by hand, in the person's shell. */
+function signinHint(acct) {
+  if (!windows()) return [`eval $(op signin${acct})`];
+  return [`PowerShell: Invoke-Expression $(op signin${acct})`, `Git Bash:   eval "$(op signin${acct} | sed 's/^\\$env:/export /')"`];
+}
 
 // JSON.parse errors quote the text they fail on. Here that text is op's output,
 // which holds secret values, so the message is replaced with a value-free one.
@@ -41,7 +55,10 @@ export class Op {
 
   run(args, { input } = {}) {
     const full = this.account ? [...args, '--account', this.account] : args;
-    const r = spawnSync('op', full, { encoding: 'utf8', input, maxBuffer: 64 * 1024 * 1024 });
+    // No input means no stdin: on Windows, op treats even an empty pipe as data and
+    // refuses `item create --template` ("cannot create an item from template and stdin").
+    const stdio = [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'];
+    const r = spawnSync('op', full, { encoding: 'utf8', input, stdio, maxBuffer: 64 * 1024 * 1024 });
     if (r.error && r.error.code === 'ENOENT') throw notInstalled();
     return r;
   }
@@ -76,8 +93,8 @@ export class Op {
     return new CliError(EXIT.NO_OP, `Not signed in to 1Password${a ? ` (account "${a}")` : ''}`, {
       said,
       fix: [
-        `eval $(op signin${acct})`,
-        'Or use Touch ID instead of a password: 1Password → Settings → Developer →',
+        ...signinHint(acct),
+        `Or use ${windows() ? 'Windows Hello' : 'Touch ID'} instead of a password: 1Password → Settings → Developer →`,
         `"Integrate with 1Password CLI", and add ${a ? `your ${a} account` : 'your account'} to the app.`,
       ],
       autofix: { prompt: 'Sign in to 1Password now?', run: () => this.signInInteractive() },
@@ -93,10 +110,10 @@ export class Op {
     const args = ['signin', ...(this.account ? ['--account', this.account] : [])];
     const r = spawnSync('op', args, { stdio: ['inherit', 'pipe', 'inherit'], encoding: 'utf8' });
     if (r.status !== 0) {
-      throw new CliError(EXIT.NO_OP, 'Sign-in did not complete', { fix: [`eval $(op signin${this.account ? ` --account ${this.account}` : ''})`, 'then run the command again.'] });
+      throw new CliError(EXIT.NO_OP, 'Sign-in did not complete', { fix: [...signinHint(this.account ? ` --account ${this.account}` : ''), 'then run the command again.'] });
     }
-    const vars = {};
-    for (const m of (r.stdout || '').matchAll(/export (OP_SESSION_\w+)="([^"]*)"/g)) process.env[m[1]] = vars[m[1]] = m[2];
+    const vars = sessionVars(r.stdout);
+    Object.assign(process.env, vars);
     if (Object.keys(vars).length) saveSession(this.account, vars);
   }
 

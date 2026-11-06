@@ -10,14 +10,21 @@ For anyone joining a project that already uses env-sync. You'll end up with work
 brew install 1password-cli
 ```
 
-Other systems: https://developer.1password.com/docs/cli/get-started/
+Windows: `winget install AgileBits.1Password.CLI`. Other systems: https://developer.1password.com/docs/cli/get-started/
 
-**Recommended: let the CLI use the 1Password app.** Open 1Password → **Settings → Developer** → turn on **Integrate with 1Password CLI**, and make sure your work account is signed in to the app. After that, 1Password asks for Touch ID when env-sync needs it, and you never type a password in the terminal.
+**Recommended: let the CLI use the 1Password app.** (On Windows, turn on Windows Hello in 1Password's Settings → Security first; the Developer option needs it.) Open 1Password → **Settings → Developer** → turn on **Integrate with 1Password CLI**, and make sure your work account is signed in to the app. After that, 1Password asks for Touch ID when env-sync needs it, and you never type a password in the terminal.
 
 Without it, env-sync offers to sign you in with your password the first time a command needs 1Password, and remembers that sign-in for later commands until 1Password expires it (after 30 idle minutes). You can also sign in yourself, in your shell:
 
 ```sh
 eval $(op signin --account epicdesignlabs)
+```
+
+On Windows, `op` prints PowerShell syntax, so use the line for your shell:
+
+```sh
+Invoke-Expression $(op signin --account epicdesignlabs)                        # PowerShell
+eval "$(op signin --account epicdesignlabs | sed 's/^\$env:/export /')"        # Git Bash
 ```
 
 ## 2. Get access to the project's vault

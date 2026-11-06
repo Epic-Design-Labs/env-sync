@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { windows } from './fsutil.js';
 
 export function sessionFile(account) {
   const base = process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache');
@@ -16,7 +17,7 @@ export function loadSession(account) {
   const file = sessionFile(account);
   let saved;
   try {
-    if ((fs.statSync(file).mode & 0o077) !== 0) { forgetSession(account, []); return []; }
+    if (!windows() && (fs.statSync(file).mode & 0o077) !== 0) { forgetSession(account, []); return []; }
     saved = JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch { return []; }
   const set = [];

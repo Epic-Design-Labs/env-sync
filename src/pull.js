@@ -3,7 +3,7 @@ import path from 'node:path';
 import { appEntry } from './config.js';
 import { diffKeys, parseTemplate, quoteValue } from './envfile.js';
 import { CliError, EXIT } from './errors.js';
-import { atomicWrite, confirm } from './fsutil.js';
+import { atomicWrite, confirm, windows } from './fsutil.js';
 import { cmd } from './hint.js';
 
 export const SHARED = 'Shared';
@@ -82,11 +82,13 @@ export function missingProblem(vault, missing) {
   return new CliError(EXIT.MISSING, `Not in 1Password ("${vault}"), so nothing was written:\n${lines.join('\n')}`, { fix });
 }
 
+const modeOk = (row) => windows() || (fs.statSync(row.destAbs).mode & 0o777) === row.mode;
+
 /** Rows whose local file differs from what 1Password would write (content or permissions). */
 export function staleRows(plans) {
   return plans.filter(({ row, data }) => {
     if (!fs.existsSync(row.destAbs)) return true;
-    return !fs.readFileSync(row.destAbs).equals(data) || (fs.statSync(row.destAbs).mode & 0o777) !== row.mode;
+    return !fs.readFileSync(row.destAbs).equals(data) || !modeOk(row);
   });
 }
 
@@ -104,9 +106,9 @@ export function runPull(mode, { cfg, op, scratch, only, yes, dryRun, log }) {
   for (const { row, data } of plans) {
     const exists = fs.existsSync(row.destAbs);
     const current = exists ? fs.readFileSync(row.destAbs) : null;
-    const modeOk = exists && (fs.statSync(row.destAbs).mode & 0o777) === row.mode;
+    const permsOk = exists && modeOk(row);
     log.out(row.dest);
-    if (current && current.equals(data) && modeOk) { log.out('  up to date.\n'); continue; }
+    if (current && current.equals(data) && permsOk) { log.out('  up to date.\n'); continue; }
     drifted = true;
     for (const line of describe(row, current?.toString(), data.toString())) log.out(line);
     if (current && current.equals(data)) log.out(`  permissions will be set to ${row.mode.toString(8)}`);
