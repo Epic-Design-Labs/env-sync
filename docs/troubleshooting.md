@@ -7,10 +7,18 @@ In a terminal, env-sync **offers** the safe fixes (signing in, adding the `.giti
 ## Signing in to 1Password
 
 **`The 1Password CLI (op) is not installed`**
-Install it: `brew install 1password-cli`. Other systems: https://developer.1password.com/docs/cli/get-started/
+Install it: `brew install 1password-cli` on macOS, `winget install AgileBits.1Password.CLI` on Windows. Other systems: https://developer.1password.com/docs/cli/get-started/
 
 **`Not signed in to 1Password (account "X")`**
 There's no active session for that account. Either answer `y` when env-sync offers to sign you in (it remembers the sign-in for later commands until 1Password expires it), or run `eval $(op signin --account X)` yourself. To use Touch ID instead of a password: 1Password → Settings → Developer → **Integrate with 1Password CLI**, and add the account to the app.
+
+On Windows, sign in by hand with `Invoke-Expression $(op signin --account X)` in PowerShell, or `eval "$(op signin --account X | sed 's/^\$env:/export /')"` in Git Bash. For Windows Hello instead of a password, turn on **Settings → Security → Windows Hello** first; the Developer option appears after that.
+
+**`:OP_SESSION_…=…: command not found`** (Git Bash on Windows)
+`op signin` printed PowerShell syntax and bash tried to run it, so the message contains your session token. Run `op signout --account X` to end that session, then sign in with the Git Bash command above. Don't paste the message anywhere.
+
+**`cannot create an item from template and stdin at the same time`** (Windows)
+env-sync is older than 1.3.3. Update with `npm install -D edl-env-sync@latest`, then re-run setup. The vault it created stays empty, so no `--force` is needed.
 
 **`The 1Password app did not answer`**
 CLI integration is on, but the app is closed or locked. Open 1Password and unlock it.
@@ -41,7 +49,7 @@ A template names variables the vault doesn't have. For each one, either add it w
 A template listed in `env-sync.conf` isn't in your checkout. Run `git pull`. If the project has never been set up, run `env:setup`.
 
 **`Out of date: <files>`** (from `doctor`) or `Out of date. Run: …` (from `check`)
-Your local files differ from 1Password. Run `env:pull`.
+Your local files differ from 1Password. Run `env:pull`. If it says this again straight after a pull: on Windows, update to 1.3.3 or later; in WSL, move the repo out of `/mnt/c/` into the Linux home.
 
 ## The repo and the config
 

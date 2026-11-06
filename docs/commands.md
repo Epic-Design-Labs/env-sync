@@ -20,7 +20,7 @@ How it behaves:
 
 - **Everything is resolved first.** If any variable or document is missing from 1Password, it lists them all and writes **no** file, not even the ones that were fine.
 - For each file it shows the change by **name** (`+` new, `~` changed, `-` dropped) and asks `Apply? [y/N]`. Answering anything but `y` leaves the file exactly as it was.
-- Files are written in one step with owner-only permissions (`600`, or the file's `mode=`). A file whose content is current but whose permissions are too loose gets fixed.
+- Files are written in one step with owner-only permissions (`600`, or the file's `mode=`). A file whose content is current but whose permissions are too loose gets fixed. On Windows, which has no permission bits, only the content is compared.
 
 ## `env-sync check`
 

@@ -4,7 +4,7 @@ Render `.env` files from 1Password, matching each variable to the 1Password fiel
 
 Your repo commits a `.env.template` that lists every variable, with the secret ones left blank. `env-sync pull` fills the blanks from a 1Password vault and writes the real `.env`. No secret ever lives in git, nobody passes values around in chat, and rotating a secret means editing one field in 1Password.
 
-Zero dependencies. Node 20+. Works with any project layout: one app or a monorepo.
+Zero dependencies. Node 20+. Works with any project layout: one app or a monorepo. Runs on macOS, Linux and Windows (PowerShell, Git Bash or WSL; see [Windows](#windows)).
 
 ## Install
 
@@ -15,7 +15,7 @@ npm install -g edl-env-sync     # or globally, to run `env-sync` anywhere
 
 You also need:
 
-- the [1Password CLI](https://developer.1password.com/docs/cli/get-started/) (`brew install 1password-cli`)
+- the [1Password CLI](https://developer.1password.com/docs/cli/get-started/) (macOS: `brew install 1password-cli`, Windows: `winget install AgileBits.1Password.CLI`)
 - access to the project's 1Password vault
 
 ## Commands
@@ -151,6 +151,28 @@ Full reference: [Configuration](docs/configuration.md).
 
 Without the app integration, env-sync offers to sign you in with your password the first time a command needs 1Password. It remembers that sign-in for later commands until 1Password expires it, after 30 idle minutes. The session is saved to `~/.cache/env-sync/`, readable only by you, and deleted as soon as 1Password rejects it. To sign out early, run `op signout --account <account>`.
 
+To sign in by hand instead, run `eval $(op signin --account <account>)` in your shell. On Windows the command differs; see below.
+
+## Windows
+
+env-sync 1.3.3 and later runs natively on Windows, in PowerShell or Git Bash. Teammates follow the same steps as on a Mac, with these differences:
+
+1. **Install the CLI** with `winget install AgileBits.1Password.CLI`, and Node 20+.
+2. **Use Windows Hello instead of Touch ID.** In the 1Password app, first turn on **Settings → Security → Windows Hello**. The **Settings → Developer → Integrate with 1Password CLI** option only appears after that. With it on, no password or session token touches the terminal. This is the recommended setup.
+3. **Signing in by hand.** On Windows, `op signin` prints PowerShell syntax, so the command depends on your shell:
+
+   ```sh
+   Invoke-Expression $(op signin --account epicdesignlabs)                        # PowerShell
+   eval "$(op signin --account epicdesignlabs | sed 's/^\$env:/export /')"        # Git Bash
+   ```
+
+   Don't run the PowerShell form in Git Bash, or `$(op signin)` without the `sed`. Bash then tries to run the session line as a command, and the error message (`:OP_SESSION_…=…: command not found`) shows your session token. If that happens, run `op signout --account <account>` to end that session.
+4. **File permissions.** Windows has no Unix permission bits, so the `600` mode and any `mode=` setting are not applied. Files rely on your user folder's access rules instead, which keep other users of the machine out. env-sync doesn't report this as out of date.
+
+**WSL** works too, as a normal Linux setup. Keep the repo in the Linux home (`~/code/…`), not under `/mnt/c/…`. Files on the Windows drive have no real permissions in WSL, so `check` would always report them out of date.
+
+If you see `cannot create an item from template and stdin at the same time` or `check` always says out of date, you have a version older than 1.3.3. Run `npm install -D edl-env-sync@latest`.
+
 ## Everyday use
 
 | You want to… | Run | Then everyone else |
@@ -205,7 +227,7 @@ In a terminal, env-sync offers the safe local fixes (signing in, adding the `.gi
 
 - **No secret value is printed, logged, or written to git.** Output shows variable names only.
 - **Nothing is half-written.** If any variable or document is missing, no file changes.
-- **Files are owner-only and written atomically.** Default mode `600`; a mode that grants group or world access is refused.
+- **Files are owner-only and written atomically.** Default mode `600`; a mode that grants group or world access is refused. On Windows, which has no permission bits, files rely on your user folder's access rules.
 - **Declining a prompt changes nothing.**
 - **The account is pinned** by `env-sync.conf`, so a second signed-in 1Password account can never answer by mistake.
 - **`pull`, `check` and `doctor` only read the vault.** Only `setup` and `add` write, and `add` never overwrites.

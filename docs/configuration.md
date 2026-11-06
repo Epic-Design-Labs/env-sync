@@ -23,7 +23,7 @@ file .secrets/signing.pem mode=400
 | `account = <name>` | The 1Password account to use. Recommended: it stops a second signed-in account from answering by mistake. |
 | `env <template> -> <destination>` | Render this template into this `.env` file. |
 | `file <path>` | Write the 1Password **document** titled with this file's name (`gr4vy-sandbox.pem`) to this path. Use it for keys and certificates. |
-| `mode=NNN` | Optional file permissions, `600` by default. Anything that lets other users read the file, like `644`, is refused. |
+| `mode=NNN` | Optional file permissions, `600` by default. Anything that lets other users read the file, like `644`, is refused. Not applied on Windows, which has no permission bits. |
 
 Paths are relative to the repo root and must stay inside the repo. Each destination can be listed once.
 

@@ -9,7 +9,7 @@ These are pinned by the test suite, which checks every command's output for secr
 - **No secret value is ever printed or logged.** Diffs, errors, `doctor` and `setup` show variable **names** only.
 - **No secret value goes into git.** Templates hold names and plain settings. `setup` treats anything it can't classify as a secret.
 - **Nothing is half-written.** Every value is fetched before any file is written. If one is missing, no file changes.
-- **Files are written in one step, readable only by you** (`600` by default). Modes that let other users read a file are refused.
+- **Files are written in one step, readable only by you** (`600` by default). Modes that let other users read a file are refused. Windows has no permission bits, so there files rely on your user folder's access rules instead.
 - **The temporary folder can't be committed.** Files pass through `.env-sync.*` at the repo root, which must be gitignored. env-sync checks this before every run and deletes the folder afterwards, including on Ctrl-C.
 - **The account is pinned.** `env-sync.conf` names the 1Password account, so a second signed-in account can't answer instead.
 - **The vault is only written by `setup` and `add`.** `pull`, `check` and `doctor` only read. `add` refuses to overwrite an existing value.
@@ -21,7 +21,7 @@ These are pinned by the test suite, which checks every command's output for secr
 - **Vault access means reading all of it.** Anyone you share a vault with can read every secret in it. Share each project's vault only with that project's people.
 - **Production detection is a best guess, not a guarantee.** `setup` excludes values whose name says `PROD`/`PRODUCTION`, live-mode keys (`_live_`), and databases on non-local hosts. A production secret without any of those signs would get through. Read setup's plan before running it for real.
 - **`add` briefly exposes the new value to other programs on your machine.** It passes the value to `op item edit` as an argument, which can appear in the process list for a moment. That's the trade for using 1Password's additive edit, which cannot overwrite the entry's other fields.
-- **A password sign-in is remembered on disk.** When env-sync signs you in, it saves the 1Password session token to `~/.cache/env-sync/session-<account>.json` (or under `$XDG_CACHE_HOME`), readable only by you, so the next command doesn't ask again. 1Password expires the token after 30 idle minutes, and env-sync deletes a saved token as soon as 1Password rejects it. Anything running as your user could read it in the meantime, the same as your `.env` files. To end it early, run `op signout --account <account>` or delete the file. With Touch ID (the 1Password app integration) nothing is saved.
+- **A password sign-in is remembered on disk.** When env-sync signs you in, it saves the 1Password session token to `~/.cache/env-sync/session-<account>.json` (or under `$XDG_CACHE_HOME`), readable only by you (on Windows, protected by your user folder's access rules), so the next command doesn't ask again. 1Password expires the token after 30 idle minutes, and env-sync deletes a saved token as soon as 1Password rejects it. Anything running as your user could read it in the meantime, the same as your `.env` files. To end it early, run `op signout --account <account>` or delete the file. With Touch ID (the 1Password app integration) nothing is saved.
 - **`ENV_SYNC_DEBUG=1` can print data from 1Password.** Use it locally, and check its output before sharing it.
 
 ## Reporting a problem
