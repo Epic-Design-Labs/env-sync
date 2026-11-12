@@ -13,6 +13,8 @@ npm install -D edl-env-sync     # or: pnpm add -D edl-env-sync / yarn add -D edl
 npm install -g edl-env-sync     # or globally, to run `env-sync` anywhere
 ```
 
+A project install puts `env-sync` in `node_modules/.bin`, which your shell does not search. Run it there as `npx env-sync <command>` (or `pnpm exec env-sync` / `yarn env-sync`), or through the [package scripts](#commands) below. To type plain `env-sync`, install it globally as well. Typing `env-sync` after only a project install gives `env-sync: command not found`.
+
 You also need:
 
 - the [1Password CLI](https://developer.1password.com/docs/cli/get-started/) (macOS: `brew install 1password-cli`, Windows: `winget install AgileBits.1Password.CLI`)

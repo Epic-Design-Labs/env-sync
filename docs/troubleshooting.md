@@ -71,6 +71,9 @@ Use one of the destinations the message lists.
 **`Node X is too old (needs 20 or newer)`**
 Install Node 20 or newer.
 
+**`env-sync: command not found`** (or the same message in your language, e.g. `orden no encontrada`)
+This comes from your shell, not env-sync. A project install (`npm install -D edl-env-sync`) puts the command in `node_modules/.bin`, which the shell does not search, so plain `env-sync` only works after a global install. Either run `npx env-sync <command>` (or `pnpm exec env-sync` / `yarn env-sync`), use the project's `env:*` scripts, or install it globally with `npm install -g edl-env-sync`. On Linux and macOS, if `npm install -g` fails with a permission error, don't use `sudo`; point npm at a folder you own: `npm config set prefix ~/.npm-global`, add `~/.npm-global/bin` to your `PATH`, then install again.
+
 ## Adding a secret
 
 **`KEY already exists in "Shared"`**

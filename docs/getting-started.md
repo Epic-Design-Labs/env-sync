@@ -40,6 +40,8 @@ pnpm install          # or npm install — env-sync comes in as a dev dependency
 pnpm env:pull
 ```
 
+No `env:*` scripts in the project? Run `npx env-sync pull` instead. Plain `env-sync pull` works only if you also installed it globally (`npm install -g edl-env-sync`); otherwise the shell says `env-sync: command not found`.
+
 `env:pull` shows what it's about to change, by variable **name** only, and asks before writing each file:
 
 ```
